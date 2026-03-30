@@ -1,0 +1,6 @@
+{
+  "Same city": "Departure and arrival cities cannot be the same",
+  "Past date": "Travel date cannot be in the past",
+  "Max 30 days": "Travel date cannot be more than 30 days ahead",
+  "Female only": "Female-only trips can only be requested by female passengers"
+}

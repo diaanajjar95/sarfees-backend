@@ -1,0 +1,6 @@
+{
+  "NOT_EMPTY": "The {property} shouldn't be empty.",
+  "IS_STRING": "The {property} must be a string.",
+  "IS_EMAIL": "The {property} must be a valid email address.",
+  "IS_ENUM": "The {property} must be a valid enum value."
+}
