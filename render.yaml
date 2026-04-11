@@ -13,23 +13,23 @@ services:
       - key: DB_HOST
         fromDatabase:
           name: sarfees-db
-          property: host
+          property: dpg-d7dckqf7f7vs73errg0g-a
       - key: DB_PORT
         fromDatabase:
           name: sarfees-db
-          property: port
+          property: 5432
       - key: DB_USERNAME
         fromDatabase:
           name: sarfees-db
-          property: user
+          property: sarfees_db_user
       - key: DB_PASSWORD
         fromDatabase:
           name: sarfees-db
-          property: password
+          property: OdY46ROXxdqOTKGHyOiQclVL69cmzcrl
       - key: DB_NAME
         fromDatabase:
           name: sarfees-db
-          property: database
+          property: sarfees_db
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
