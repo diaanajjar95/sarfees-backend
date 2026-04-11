@@ -3,11 +3,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { TripsService } from './trips.service';
 import { TripsController } from './trips.controller';
 import { TripRequest } from './entities/trip-request.entity';
+import { Driver } from './entities/driver.entity';
+import { DriverLocation } from './entities/driver-location.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([TripRequest])],
+  imports: [TypeOrmModule.forFeature([TripRequest, Driver, DriverLocation])],
   controllers: [TripsController],
   providers: [TripsService],
 })
 export class TripsModule {}
-

@@ -2,5 +2,12 @@
   "Same city": "Departure and arrival cities cannot be the same",
   "Past date": "Travel date cannot be in the past",
   "Max 30 days": "Travel date cannot be more than 30 days ahead",
-  "Female only": "Female-only trips can only be requested by female passengers"
+  "Female only": "Female-only trips can only be requested by female passengers",
+  "No active trip": "You have no active trip at the moment",
+  "Trip not found": "Trip not found or you do not have access to it",
+  "Invalid transition": "This status transition is not allowed",
+  "Status updated": "Trip status updated successfully",
+  "Trip not active": "Location updates are only allowed for active trips",
+  "No driver assigned": "No driver has been assigned to this trip yet",
+  "No driver location": "Driver location is not available yet"
 }

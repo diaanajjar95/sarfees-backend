@@ -26,7 +26,7 @@ export class AuthService {
 
     // Check if user is locked out
     if (user.otpLockedUntil && user.otpLockedUntil > now) {
-      throw new ForbiddenException(I18nContext.current()?.t('auth.Account locked') || 'Account temporarily locked due to too many failed attempts.');
+      throw new ForbiddenException(I18nContext.current()?.t('auth.Account locked'));
     }
 
     // Rate Limiting Logic: Max 3 requests per 10 minutes
@@ -34,7 +34,7 @@ export class AuthService {
 
     if (user.otpLastRequestAt && user.otpLastRequestAt > tenMinutesAgo) {
       if (user.otpRequestCount >= 3) {
-        throw new ForbiddenException(I18nContext.current()?.t('auth.Too many requests') || 'Too many OTP requests. Please try again later.');
+        throw new ForbiddenException(I18nContext.current()?.t('auth.Too many requests'));
       }
     } else {
       // Reset counter if time window passed
@@ -61,29 +61,29 @@ export class AuthService {
   async verifyOtp(phoneNumber: string, otp: string) {
     const user = await this.usersService.findByPhone(phoneNumber);
     if (!user) {
-      throw new UnauthorizedException(I18nContext.current()?.t('auth.User not found') || 'User not found. Please request OTP first.');
+      throw new UnauthorizedException(I18nContext.current()?.t('auth.User not found'));
     }
 
     // Check Lockout
     if (user.otpLockedUntil && user.otpLockedUntil > new Date()) {
-       throw new ForbiddenException(I18nContext.current()?.t('auth.Account locked') || 'Account temporarily locked due to too many failed attempts.');
+       throw new ForbiddenException(I18nContext.current()?.t('auth.Account locked'));
     }
 
     // Check Expiry
     if (user.otpExpiresAt && user.otpExpiresAt < new Date()) {
-       throw new UnauthorizedException(I18nContext.current()?.t('auth.OTP expired') || 'OTP has expired');
+       throw new UnauthorizedException(I18nContext.current()?.t('auth.OTP expired'));
     }
 
     // Check Validity
     if (user.otp !== otp) {
       const attempts = (user.otpAttemptCount || 0) + 1;
       let updates: Partial<User> = { otpAttemptCount: attempts };
-      let errorMessage = (I18nContext.current()?.t('auth.Invalid OTP') || 'Invalid OTP') as string;
+      let errorMessage = I18nContext.current()?.t('auth.Invalid OTP') as string;
 
       if (attempts >= 5) {
         // Lock out for 15 minutes
         updates.otpLockedUntil = new Date(Date.now() + 15 * 60 * 1000);
-        errorMessage = (I18nContext.current()?.t('auth.Locked for 15 minutes') || 'Too many failed attempts. Locked for 15 minutes.') as string;
+        errorMessage = I18nContext.current()?.t('auth.Locked for 15 minutes') as string;
       }
 
       await this.usersService.update(user.id, updates);
@@ -117,13 +117,13 @@ export class AuthService {
   async refreshTokens(userId: number, refreshToken: string) {
     const user = await this.usersService.findById(userId);
     if (!user || !user.refreshToken)
-      throw new ForbiddenException(I18nContext.current()?.t('auth.Access Denied') || 'Access Denied');
+      throw new ForbiddenException(I18nContext.current()?.t('auth.Access Denied'));
 
     const refreshTokenMatches = await bcrypt.compare(
       refreshToken,
       user.refreshToken,
     );
-    if (!refreshTokenMatches) throw new ForbiddenException(I18nContext.current()?.t('auth.Access Denied') || 'Access Denied');
+    if (!refreshTokenMatches) throw new ForbiddenException(I18nContext.current()?.t('auth.Access Denied'));
 
     const tokens = await this.getTokens(user);
     await this.updateRefreshToken(user.id, tokens.refreshToken);

@@ -1,0 +1,9 @@
+{
+  "Same city": "Departure and arrival cities cannot be the same",
+  "Terms required": "You must accept the package delivery terms",
+  "Not found": "Package delivery request not found",
+  "Estimated delivery": "2-4 hours after driver match",
+  "Conditions": "Package must not contain prohibited items. Maximum weight: Small 5kg, Medium 15kg, Large 30kg.",
+  "Created successfully": "Package delivery request created successfully",
+  "Fee estimated": "Delivery fee estimated successfully"
+}

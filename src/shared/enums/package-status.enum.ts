@@ -1,0 +1,8 @@
+export enum PackageStatus {
+  PENDING = 'PENDING',
+  MATCHED = 'MATCHED',
+  PICKED_UP = 'PICKED_UP',
+  IN_TRANSIT = 'IN_TRANSIT',
+  DELIVERED = 'DELIVERED',
+  CANCELLED = 'CANCELLED',
+}

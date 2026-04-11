@@ -2,6 +2,7 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateCol
 import { User } from '../../users/user.entity';
 import { TripStatus } from '../../shared/enums/trip-status.enum';
 import { City } from '../../cities/city.entity';
+import { Driver } from './driver.entity';
 
 @Entity('trip_requests')
 export class TripRequest {
@@ -10,6 +11,9 @@ export class TripRequest {
 
   @ManyToOne(() => User)
   passenger: User;
+
+  @ManyToOne(() => Driver, { nullable: true, eager: false })
+  driver: Driver;
 
   @ManyToOne(() => City)
   departureCity: City;
@@ -43,6 +47,15 @@ export class TripRequest {
 
   @Column({ type: 'enum', enum: TripStatus, default: TripStatus.PENDING })
   status: TripStatus;
+
+  @Column({ nullable: true })
+  etaToPickup: string;
+
+  @Column({ nullable: true })
+  etaToDestination: string;
+
+  @Column({ nullable: true })
+  statusUpdatedAt: Date;
 
   @CreateDateColumn()
   createdAt: Date;
