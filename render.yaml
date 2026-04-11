@@ -1,0 +1,36 @@
+databases:
+  - name: sarfees-db
+    plan: free
+    databaseName: sarfees_db
+    user: sarfees_user
+
+services:
+  - type: web
+    name: sarfees-api
+    runtime: docker
+    plan: free
+    envVars:
+      - key: DB_HOST
+        fromDatabase:
+          name: sarfees-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: sarfees-db
+          property: port
+      - key: DB_USERNAME
+        fromDatabase:
+          name: sarfees-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: sarfees-db
+          property: password
+      - key: DB_NAME
+        fromDatabase:
+          name: sarfees-db
+          property: database
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
