@@ -13,20 +13,28 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new I18nValidationExceptionFilter());
 
-  const config = new DocumentBuilder()
-    .setTitle('Sarfees API')
-    .setDescription('The Sarfees API description')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .addGlobalParameters({
-      in: 'header',
-      required: false,
-      name: 'Accept-Language',
-      schema: { example: 'ar' },
-    })
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
+  const swaggerEnabled = process.env.SWAGGER_ENABLED !== 'false';
+  if (swaggerEnabled) {
+    const swaggerPath = process.env.SWAGGER_PATH || 'api';
+    const config = new DocumentBuilder()
+      .setTitle('Sarfees API')
+      .setDescription('The Sarfees API description')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .addGlobalParameters({
+        in: 'header',
+        required: false,
+        name: 'Accept-Language',
+        schema: { example: 'ar' },
+      })
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup(swaggerPath, app, document, {
+      swaggerOptions: {
+        persistAuthorization: true,
+      },
+    });
+  }
 
   await app.listen(process.env.PORT ?? 3000);
 }
