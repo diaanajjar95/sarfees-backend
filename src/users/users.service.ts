@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { User } from './user.entity';
 import { CompleteProfileDto } from './dto/complete-profile.dto';
 
@@ -11,12 +11,15 @@ export class UsersService {
     private usersRepository: Repository<User>,
   ) {}
 
-  async findByPhone(phoneNumber: string): Promise<User | null> {
-    return this.usersRepository.findOneBy({ phoneNumber });
+  async findByPhone(
+    phoneNumber: string,
+    countryCode: string,
+  ): Promise<User | null> {
+    return this.usersRepository.findOneBy({ phoneNumber, countryCode });
   }
 
-  async create(phoneNumber: string): Promise<User> {
-    const user = this.usersRepository.create({ phoneNumber });
+  async create(phoneNumber: string, countryCode: string): Promise<User> {
+    const user = this.usersRepository.create({ phoneNumber, countryCode });
     return this.usersRepository.save(user);
   }
 
@@ -50,7 +53,17 @@ export class UsersService {
     }
     user.isProfileCompleted = true;
 
-    return this.usersRepository.save(user);
+    try {
+      return await this.usersRepository.save(user);
+    } catch (err) {
+      if (
+        err instanceof QueryFailedError &&
+        (err as any).code === '23505' &&
+        (err as any).detail?.includes('email')
+      ) {
+        throw new ConflictException('Email is already in use');
+      }
+      throw err;
+    }
   }
 }
-

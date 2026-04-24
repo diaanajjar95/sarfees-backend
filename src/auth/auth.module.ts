@@ -26,4 +26,3 @@ import { RefreshTokenStrategy } from './strategies/refreshToken.strategy';
   exports: [AuthService],
 })
 export class AuthModule {}
-

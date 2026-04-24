@@ -2,6 +2,8 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { I18nValidationExceptionFilter, I18nValidationPipe } from 'nestjs-i18n';
 import { AppModule } from './app.module';
+import { ResponseInterceptor } from './shared/interceptors/response.interceptor';
+import { AllExceptionsFilter } from './shared/filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -11,7 +13,16 @@ async function bootstrap() {
       transformOptions: { enableImplicitConversion: true },
     }),
   );
-  app.useGlobalFilters(new I18nValidationExceptionFilter());
+
+  // Order matters: the I18n validation filter normalizes validation errors,
+  // then our AllExceptionsFilter wraps everything in the standard envelope.
+  app.useGlobalFilters(
+    new I18nValidationExceptionFilter(),
+    new AllExceptionsFilter(),
+  );
+
+  // Wrap every successful response in { code, message, data }.
+  app.useGlobalInterceptors(new ResponseInterceptor());
 
   const swaggerEnabled = process.env.SWAGGER_ENABLED !== 'false';
   if (swaggerEnabled) {

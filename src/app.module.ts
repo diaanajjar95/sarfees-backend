@@ -9,6 +9,7 @@ import { AcceptLanguageResolver, I18nModule } from 'nestjs-i18n';
 import { TripsModule } from './trips/trips.module';
 import { CitiesModule } from './cities/cities.module';
 import { PackagesModule } from './packages/packages.module';
+import { AppConfigModule } from './app-config/app-config.module';
 import * as path from 'path';
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import * as path from 'path';
     TripsModule,
     CitiesModule,
     PackagesModule,
+    AppConfigModule,
   ],
   controllers: [AppController],
   providers: [AppService],

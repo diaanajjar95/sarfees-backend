@@ -1,12 +1,26 @@
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  CreateDateColumn,
+  UpdateDateColumn,
+  Unique,
+} from 'typeorm';
 
 @Entity()
+@Unique('UQ_user_phone_country', ['countryCode', 'phoneNumber'])
 export class User {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ unique: true })
+  @Column()
   phoneNumber: string;
+
+  @Column({ nullable: true })
+  countryCode: string;
+
+  @Column({ default: false })
+  hasVerifiedOtpBefore: boolean;
 
   @Column({ nullable: true })
   firstName: string;
