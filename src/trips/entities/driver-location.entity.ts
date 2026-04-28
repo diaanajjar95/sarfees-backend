@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, UpdateDateColumn } from 'typeorm';
-import { Driver } from './driver.entity';
+import { Driver } from '../../drivers/driver.entity';
 import { TripRequest } from './trip-request.entity';
 
 @Entity('driver_locations')

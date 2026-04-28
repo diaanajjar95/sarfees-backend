@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, ForbiddenException, NotFoundException 
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { TripRequest } from './entities/trip-request.entity';
-import { Driver } from './entities/driver.entity';
+import { Driver } from '../drivers/driver.entity';
 import { DriverLocation } from './entities/driver-location.entity';
 import { TripStatus } from '../shared/enums/trip-status.enum';
 import { EstimateTripDto, CreateTripDto } from './dto/create-trip.dto';
@@ -354,10 +354,12 @@ export class TripsService {
   // ─── Helpers ───────────────────────────────────────────────
 
   private mapDriverInfo(driver: Driver): DriverInfoDto {
+    const [firstName, ...rest] = (driver.name ?? '').trim().split(/\s+/);
+    const lastName = rest.join(' ');
     return {
       id: driver.id,
-      firstName: driver.firstName,
-      lastName: driver.lastName,
+      firstName: firstName || '',
+      lastName: lastName || '',
       profilePhotoUrl: driver.profilePhotoUrl || null,
       vehicleMake: driver.vehicleMake,
       vehicleModel: driver.vehicleModel,

@@ -1,0 +1,8 @@
+{
+  "Not found": "Driver not found.",
+  "Already on trip": "You cannot change activation while on a trip.",
+  "Cannot deactivate during trip": "You cannot go offline while on a trip.",
+  "Not active": "You must be active to update preferences.",
+  "Women-only restricted": "Only female drivers can accept Women-Only trips.",
+  "No home city": "Your home city is not set. Please contact support to enable Going Home mode."
+}
