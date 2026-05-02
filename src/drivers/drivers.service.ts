@@ -16,6 +16,7 @@ import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { DriverProfileResponseDto } from './dto/driver-profile-response.dto';
 import { HomeSummaryResponseDto } from './dto/home-summary-response.dto';
+import { AnnouncementsService } from '../announcements/announcements.service';
 
 @Injectable()
 export class DriversService {
@@ -24,6 +25,7 @@ export class DriversService {
     private readonly driversRepository: Repository<Driver>,
     @InjectRepository(DriverTrip)
     private readonly driverTripsRepository: Repository<DriverTrip>,
+    private readonly announcementsService: AnnouncementsService,
   ) {}
 
   // ─── Lookups (used by auth slice) ──────────────────────────
@@ -78,6 +80,8 @@ export class DriversService {
       order: { completedAt: 'DESC' },
     });
 
+    const announcements = await this.announcementsService.listActive();
+
     return {
       todayEarnings,
       lastTrip: lastCompleted
@@ -89,7 +93,7 @@ export class DriversService {
           }
         : null,
       outstandingBalance: Number(driver.outstandingBalance),
-      announcements: [],
+      announcements,
     };
   }
 

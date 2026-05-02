@@ -7,6 +7,22 @@ import { AllExceptionsFilter } from './shared/filters/http-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Admin portal lives on its own origin in dev and (typically) in prod.
+  // ADMIN_PORTAL_ORIGIN can be a comma-separated list to allow multiple deploys.
+  const adminOrigins = (
+    process.env.ADMIN_PORTAL_ORIGIN ?? 'http://localhost:3001'
+  )
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  app.enableCors({
+    origin: adminOrigins,
+    credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept-Language'],
+  });
+
   app.useGlobalPipes(
     new I18nValidationPipe({
       transform: true,

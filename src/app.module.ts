@@ -14,6 +14,12 @@ import { DriversModule } from './drivers/drivers.module';
 import { DriverAuthModule } from './auth/driver/driver-auth.module';
 import { DriverTripsModule } from './driver-trips/driver-trips.module';
 import { DriverNotificationsModule } from './notifications/driver-notifications.module';
+import { AdminsModule } from './admins/admins.module';
+import { AdminAuthModule } from './auth/admin/admin-auth.module';
+import { AdminDriversModule } from './admins/drivers/admin-drivers.module';
+import { AdminTripsModule } from './admins/trips/admin-trips.module';
+import { AdminEarningsModule } from './admins/earnings/admin-earnings.module';
+import { AnnouncementsModule } from './announcements/announcements.module';
 import * as path from 'path';
 @Module({
   imports: [
@@ -52,6 +58,12 @@ import * as path from 'path';
     DriverAuthModule,
     DriverTripsModule,
     DriverNotificationsModule,
+    AdminsModule,
+    AdminAuthModule,
+    AdminDriversModule,
+    AdminTripsModule,
+    AdminEarningsModule,
+    AnnouncementsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

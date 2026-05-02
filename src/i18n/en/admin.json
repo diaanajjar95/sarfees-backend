@@ -1,0 +1,6 @@
+{
+  "Insufficient role": "Your admin role does not allow this action.",
+  "Phone already registered": "A driver with that phone number already exists.",
+  "Cannot suspend on trip": "Cannot suspend a driver who is currently on a trip.",
+  "Not suspended": "Driver is not currently suspended."
+}

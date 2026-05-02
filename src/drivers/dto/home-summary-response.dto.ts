@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { AnnouncementResponseDto } from '../../announcements/dto/announcement.dto';
 
 export class LastTripSummaryDto {
   @ApiProperty({ example: 'Irbid' }) origin: string;
@@ -18,8 +19,8 @@ export class HomeSummaryResponseDto {
   lastTrip: LastTripSummaryDto | null;
   @ApiProperty({ example: 0 }) outstandingBalance: number;
   @ApiProperty({
-    example: [],
-    description: 'Ops announcements (carousel on home screen). Empty for MVP.',
+    type: [AnnouncementResponseDto],
+    description: 'Active ops announcements (highest priority first).',
   })
-  announcements: unknown[];
+  announcements: AnnouncementResponseDto[];
 }

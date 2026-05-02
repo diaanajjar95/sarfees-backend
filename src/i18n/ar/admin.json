@@ -1,0 +1,6 @@
+{
+  "Insufficient role": "صلاحياتك كمسؤول لا تسمح بهذا الإجراء.",
+  "Phone already registered": "يوجد سائق مسجل بنفس رقم الهاتف.",
+  "Cannot suspend on trip": "لا يمكن تعليق سائق يقوم برحلة حالياً.",
+  "Not suspended": "السائق غير معلّق حالياً."
+}
