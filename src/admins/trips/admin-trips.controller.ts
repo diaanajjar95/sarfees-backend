@@ -21,6 +21,7 @@ import {
   ListAdminTripsResponseDto,
 } from './dto/list-admin-trips.dto';
 import { ManifestResponseDto } from '../../driver-trips/dto/manifest.dto';
+import { AdminTripDetailDto } from './dto/admin-trip-detail.dto';
 import { Roles } from '../../shared/decorators/roles.decorator';
 import { RolesGuard } from '../../shared/guards/roles.guard';
 import { AdminRole } from '../../shared/enums/admin-role.enum';
@@ -47,12 +48,14 @@ export class AdminTripsController {
     return this.service.list(query);
   }
 
-  @ApiOperation({ summary: 'Get trip detail (full manifest)' })
-  @ApiResponse({ status: 200, type: ManifestResponseDto })
+  @ApiOperation({
+    summary: 'Get trip detail (manifest + lifecycle + decline log + pricing)',
+  })
+  @ApiResponse({ status: 200, type: AdminTripDetailDto })
   @Get(':id')
   detail(
     @Param('id', ParseIntPipe) id: number,
-  ): Promise<ManifestResponseDto> {
+  ): Promise<AdminTripDetailDto> {
     return this.service.detail(id);
   }
 

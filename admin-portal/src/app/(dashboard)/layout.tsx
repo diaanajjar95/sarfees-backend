@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Users,
   Route,
+  Inbox,
   DollarSign,
   Megaphone,
   LogOut,
@@ -11,6 +12,7 @@ import { getCurrentAdmin, logoutAction } from '@/lib/auth';
 
 const NAV: { href: string; label: string; icon: typeof Users; disabled?: boolean }[] = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/passenger-requests', label: 'Passenger requests', icon: Inbox },
   { href: '/drivers', label: 'Drivers', icon: Users },
   { href: '/trips', label: 'Trips', icon: Route },
   { href: '/earnings', label: 'Earnings', icon: DollarSign },

@@ -4,6 +4,7 @@ import { In, Repository } from 'typeorm';
 import { TripRequest } from './entities/trip-request.entity';
 import { Driver } from '../drivers/driver.entity';
 import { DriverLocation } from './entities/driver-location.entity';
+import { MatchingService } from '../matching/matching.service';
 import { TripStatus } from '../shared/enums/trip-status.enum';
 import { EstimateTripDto, CreateTripDto } from './dto/create-trip.dto';
 import {
@@ -48,6 +49,8 @@ export class TripsService {
 
     @InjectRepository(DriverLocation)
     private driverLocationRepository: Repository<DriverLocation>,
+
+    private readonly matchingService: MatchingService,
   ) {}
 
   // ─── Existing endpoints ────────────────────────────────────
@@ -102,7 +105,26 @@ export class TripsService {
       status: TripStatus.PENDING,
     });
 
-    return this.tripsRepository.save(trip);
+    const saved = await this.tripsRepository.save(trip);
+
+    // Auto-match: try to find an active driver and offer the trip immediately.
+    // Failure here MUST NOT roll back the passenger's request — we keep it as
+    // PENDING so ops can assign manually from /admin/passenger-requests.
+    try {
+      const reloaded = await this.tripsRepository.findOne({
+        where: { id: saved.id },
+        relations: ['departureCity', 'arrivalCity'],
+      });
+      if (reloaded) {
+        await this.matchingService.attemptMatch(reloaded);
+      }
+    } catch (err) {
+      // Logged inside MatchingService; swallow here to keep createRequest's
+      // public contract unchanged.
+      void err;
+    }
+
+    return saved;
   }
 
   async getUserTrips(userId: number, query: PaginationQueryDto): Promise<PaginatedResponse<TripRequest>> {

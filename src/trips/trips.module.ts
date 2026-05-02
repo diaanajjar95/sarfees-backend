@@ -5,9 +5,13 @@ import { TripsController } from './trips.controller';
 import { TripRequest } from './entities/trip-request.entity';
 import { Driver } from '../drivers/driver.entity';
 import { DriverLocation } from './entities/driver-location.entity';
+import { MatchingModule } from '../matching/matching.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([TripRequest, Driver, DriverLocation])],
+  imports: [
+    TypeOrmModule.forFeature([TripRequest, Driver, DriverLocation]),
+    MatchingModule,
+  ],
   controllers: [TripsController],
   providers: [TripsService],
 })

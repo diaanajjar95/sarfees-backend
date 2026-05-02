@@ -120,14 +120,23 @@ export class AdminAuthService {
       email: admin.email,
       role: admin.role,
     };
+    // TTLs are env-configurable so dev can run a long-lived session without
+    // re-authing every 30 minutes. Defaults are conservative for prod.
+    const accessTtl =
+      this.configService.get<string>('JWT_ADMIN_ACCESS_EXPIRES_IN') ?? '30m';
+    const refreshTtl =
+      this.configService.get<string>('JWT_ADMIN_REFRESH_EXPIRES_IN') ?? '7d';
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
         secret: this.configService.get<string>('JWT_ADMIN_ACCESS_SECRET'),
-        expiresIn: '30m',
+        // @nestjs/jwt's SignOptions types expiresIn as `ms.StringValue | number`,
+        // a literal-string union enforced by the `ms` library. Our env value is a
+        // plain runtime string ('30d', etc.) — cast to satisfy the compiler.
+        expiresIn: accessTtl as unknown as number,
       }),
       this.jwtService.signAsync(payload, {
         secret: this.configService.get<string>('JWT_ADMIN_REFRESH_SECRET'),
-        expiresIn: '7d',
+        expiresIn: refreshTtl as unknown as number,
       }),
     ]);
     return { accessToken, refreshToken };

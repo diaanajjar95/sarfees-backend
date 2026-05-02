@@ -6,6 +6,7 @@ import type {
   DriverTripStatus,
   DriverTripType,
 } from '@/lib/types';
+import TripRow from './_TripRow';
 
 interface PageProps {
   searchParams: Promise<{
@@ -138,7 +139,8 @@ export default async function TripsListPage({ searchParams }: PageProps) {
                   color: 'var(--color-sarfees-gold)',
                 }}
               >
-                <th className="px-5 py-3">Trip</th>
+                <th className="px-5 py-3 w-[80px]">ID</th>
+                <th className="px-5 py-3">Route</th>
                 <th className="px-5 py-3">Driver</th>
                 <th className="px-5 py-3">Type</th>
                 <th className="px-5 py-3">Status</th>
@@ -151,7 +153,7 @@ export default async function TripsListPage({ searchParams }: PageProps) {
               {resp.data.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="px-5 py-8 text-center text-sm"
                     style={{ color: 'var(--color-sarfees-muted)' }}
                   >
@@ -159,51 +161,13 @@ export default async function TripsListPage({ searchParams }: PageProps) {
                   </td>
                 </tr>
               )}
-              {resp.data.map((t) => {
-                const c = STATUS_COLOR[t.status] ?? STATUS_COLOR.expired;
-                return (
-                  <tr
-                    key={t.id}
-                    className="border-t cursor-pointer hover:bg-[rgba(255,255,255,0.02)]"
-                    style={{ borderColor: 'var(--color-sarfees-border)' }}
-                  >
-                    <td className="px-5 py-3">
-                      <Link href={`/trips/${t.id}`} className="font-semibold">
-                        {t.originCity} → {t.destinationCity}
-                      </Link>
-                      <div
-                        className="text-[11px] font-mono"
-                        style={{ color: 'var(--color-sarfees-soft)' }}
-                      >
-                        #{t.id}
-                      </div>
-                    </td>
-                    <td className="px-5 py-3">
-                      {t.driverName ? (
-                        <Link href={`/drivers/${t.driverId}`}>{t.driverName}</Link>
-                      ) : (
-                        <span style={{ color: 'var(--color-sarfees-soft)' }}>—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">{t.type.replace('_', ' ')}</td>
-                    <td className="px-5 py-3">
-                      <span
-                        className="status-pill"
-                        style={{ color: c.fg, border: `1px solid ${c.border}` }}
-                      >
-                        {t.status.replace('_', ' ')}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3">{new Date(t.departureTime).toLocaleString()}</td>
-                    <td className="px-5 py-3 text-right">
-                      {Number(t.totalCashCollected).toFixed(2)} JD
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      {t.netEarnings != null ? `${Number(t.netEarnings).toFixed(2)} JD` : '—'}
-                    </td>
-                  </tr>
-                );
-              })}
+              {resp.data.map((t) => (
+                <TripRow
+                  key={t.id}
+                  trip={t}
+                  statusColor={STATUS_COLOR[t.status] ?? STATUS_COLOR.expired}
+                />
+              ))}
             </tbody>
           </table>
         )}

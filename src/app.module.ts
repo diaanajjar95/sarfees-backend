@@ -19,6 +19,7 @@ import { AdminAuthModule } from './auth/admin/admin-auth.module';
 import { AdminDriversModule } from './admins/drivers/admin-drivers.module';
 import { AdminTripsModule } from './admins/trips/admin-trips.module';
 import { AdminEarningsModule } from './admins/earnings/admin-earnings.module';
+import { AdminPassengerRequestsModule } from './admins/passenger-requests/admin-passenger-requests.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import * as path from 'path';
 @Module({
@@ -63,6 +64,7 @@ import * as path from 'path';
     AdminDriversModule,
     AdminTripsModule,
     AdminEarningsModule,
+    AdminPassengerRequestsModule,
     AnnouncementsModule,
   ],
   controllers: [AppController],

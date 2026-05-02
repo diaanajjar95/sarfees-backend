@@ -4,7 +4,25 @@ import { useActionState } from 'react';
 import { manualAssignAction, type ManualAssignResult } from '../actions';
 import type { DriverProfile } from '@/lib/types';
 
-export default function ManualAssignForm({ drivers }: { drivers: DriverProfile[] }) {
+export interface Prefill {
+  tripRequestIds?: string;
+  type?: string;
+  originCity?: string;
+  destinationCity?: string;
+  departureTime?: string;
+  pickupLat?: string;
+  pickupLng?: string;
+  dropoffLat?: string;
+  dropoffLng?: string;
+}
+
+export default function ManualAssignForm({
+  drivers,
+  prefill = {},
+}: {
+  drivers: DriverProfile[];
+  prefill?: Prefill;
+}) {
   const [state, formAction, pending] = useActionState<
     ManualAssignResult | null,
     FormData
@@ -26,7 +44,7 @@ export default function ManualAssignForm({ drivers }: { drivers: DriverProfile[]
           <Select
             label="Trip type"
             name="type"
-            defaultValue="shared"
+            defaultValue={prefill.type ?? 'shared'}
             options={[
               { value: 'shared', label: 'Shared' },
               { value: 'women_only', label: 'Women-only' },
@@ -39,14 +57,25 @@ export default function ManualAssignForm({ drivers }: { drivers: DriverProfile[]
             name="departureTime"
             type="datetime-local"
             required
+            defaultValue={prefill.departureTime ?? ''}
           />
         </div>
       </Section>
 
       <Section title="Route">
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Origin city" name="originCity" required defaultValue="Irbid" />
-          <Field label="Destination city" name="destinationCity" required defaultValue="Amman" />
+          <Field
+            label="Origin city"
+            name="originCity"
+            required
+            defaultValue={prefill.originCity ?? 'Irbid'}
+          />
+          <Field
+            label="Destination city"
+            name="destinationCity"
+            required
+            defaultValue={prefill.destinationCity ?? 'Amman'}
+          />
         </div>
         <div className="grid grid-cols-2 gap-4">
           <Field
@@ -55,7 +84,7 @@ export default function ManualAssignForm({ drivers }: { drivers: DriverProfile[]
             type="number"
             step="any"
             required
-            defaultValue="32.5556"
+            defaultValue={prefill.pickupLat ?? '32.5556'}
           />
           <Field
             label="Pickup lng"
@@ -63,7 +92,7 @@ export default function ManualAssignForm({ drivers }: { drivers: DriverProfile[]
             type="number"
             step="any"
             required
-            defaultValue="35.85"
+            defaultValue={prefill.pickupLng ?? '35.85'}
           />
         </div>
         <div className="grid grid-cols-2 gap-4">
@@ -73,7 +102,7 @@ export default function ManualAssignForm({ drivers }: { drivers: DriverProfile[]
             type="number"
             step="any"
             required
-            defaultValue="31.9539"
+            defaultValue={prefill.dropoffLat ?? '31.9539'}
           />
           <Field
             label="Dropoff lng"
@@ -81,7 +110,7 @@ export default function ManualAssignForm({ drivers }: { drivers: DriverProfile[]
             type="number"
             step="any"
             required
-            defaultValue="35.9106"
+            defaultValue={prefill.dropoffLng ?? '35.9106'}
           />
         </div>
         <div className="grid grid-cols-2 gap-4">
@@ -96,6 +125,7 @@ export default function ManualAssignForm({ drivers }: { drivers: DriverProfile[]
           name="tripRequestIds"
           required
           placeholder="1,2,3"
+          defaultValue={prefill.tripRequestIds ?? ''}
         />
         <Field
           label="Package delivery IDs (optional, comma-separated)"

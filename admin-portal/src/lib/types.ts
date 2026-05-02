@@ -315,3 +315,109 @@ export interface SettleBalanceResponse {
   amountSettled: number;
   newBalance: number;
 }
+
+// ─── Passenger requests (admin view) ───────────────────────────
+export type PassengerRequestStatus =
+  | 'PENDING'
+  | 'MATCHED'
+  | 'DRIVER_EN_ROUTE'
+  | 'ARRIVED_AT_PICKUP'
+  | 'TRIP_IN_PROGRESS'
+  | 'ARRIVING_AT_DROPOFF'
+  | 'COMPLETED'
+  | 'CANCELLED';
+
+export interface PassengerRequestRow {
+  id: number;
+  status: PassengerRequestStatus;
+  passengerName: string;
+  passengerPhone: string;
+  passengerGender: string | null;
+  departureCity: string | null;
+  arrivalCity: string | null;
+  departureLat: number;
+  departureLng: number;
+  arrivalLat: number;
+  arrivalLng: number;
+  travelDate: string | null;
+  isImmediate: boolean;
+  seatsCount: number;
+  isFemaleOnly: boolean;
+  perSeatFare: number;
+  totalFare: number;
+  driverId: number | null;
+  driverName: string | null;
+  createdAt: string;
+}
+
+export interface PassengerRequestsListResponse {
+  data: PassengerRequestRow[];
+  page: number;
+  limit: number;
+  totalItems: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+  pendingCount: number;
+}
+
+// ─── Admin trip detail (manifest + lifecycle) ──────────────────
+export type LifecycleEventKind =
+  | 'offered'
+  | 'offer_expired'
+  | 'accepted'
+  | 'declined'
+  | 'started'
+  | 'arrived_stop'
+  | 'pickup_confirmed'
+  | 'dropoff_confirmed'
+  | 'completed'
+  | 'cancelled';
+
+export interface LifecycleEvent {
+  kind: LifecycleEventKind;
+  at: string;
+  label: string;
+  detail: string | null;
+  stopOrder: number | null;
+  stopCity: string | null;
+}
+
+export interface AdminTripDriverInfo {
+  id: number;
+  name: string | null;
+  phone: string;
+  rating: number;
+  ratingCount: number;
+  totalTrips: number;
+}
+
+export interface TripDeclineRow {
+  id: number;
+  reason: string;
+  autoDeclined: boolean;
+  notes: string | null;
+  declinedAt: string;
+}
+
+export interface TripCancellation {
+  zone: number;
+  reason: string;
+  cancelledAt: string;
+}
+
+export interface TripPricing {
+  totalCashExpected: number;
+  totalCashCollected: number;
+  commissionRate: number;
+  commissionAmount: number;
+  netEarnings: number;
+}
+
+export interface AdminTripDetail extends ManifestResponse {
+  driver: AdminTripDriverInfo | null;
+  lifecycle: LifecycleEvent[];
+  declineHistory: TripDeclineRow[];
+  cancellation: TripCancellation | null;
+  pricing: TripPricing;
+}

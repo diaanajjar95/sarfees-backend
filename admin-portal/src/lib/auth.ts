@@ -11,8 +11,14 @@ import {
 } from './api';
 import type { AdminUser, LoginResponse } from './types';
 
-const ACCESS_TTL_SECONDS = 30 * 60;        // mirror JWT_ADMIN access (30m)
-const REFRESH_TTL_SECONDS = 7 * 24 * 60 * 60; // mirror JWT_ADMIN refresh (7d)
+// Cookie TTLs mirror the backend JWT TTLs. Override via env to extend dev
+// sessions: ADMIN_ACCESS_TTL_SECONDS=2592000 = 30 days.
+const ACCESS_TTL_SECONDS = Number(
+  process.env.ADMIN_ACCESS_TTL_SECONDS ?? 30 * 60,
+);
+const REFRESH_TTL_SECONDS = Number(
+  process.env.ADMIN_REFRESH_TTL_SECONDS ?? 7 * 24 * 60 * 60,
+);
 
 const cookieOpts = (maxAge: number) => ({
   httpOnly: true,
