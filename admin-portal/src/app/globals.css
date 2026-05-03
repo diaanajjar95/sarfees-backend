@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+@theme {
+  /* ─── Sarfees brand tokens (mirrors driver app spec) ───────── */
+  --color-sarfees-gold: #FABE2C;
+  --color-sarfees-gold-dark: #F5A623;
+  --color-sarfees-gold-light: #FDD97E;
+  --color-sarfees-dark-1: #0F0F12;
+  --color-sarfees-dark-2: #181820;
+  --color-sarfees-dark-3: #22222E;
+  --color-sarfees-text: #FFFFFF;
+  --color-sarfees-muted: #9090A0;
+  --color-sarfees-soft: #38383F;
+  --color-sarfees-border: rgba(255, 255, 255, 0.10);
+  --color-sarfees-success: #2E7D32;
+  --color-sarfees-warning: #F57C00;
+  --color-sarfees-error: #C62828;
+  --color-sarfees-blue: #2F80ED;
+
+  --font-sans: 'Nunito', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, monospace;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-sarfees-dark-1);
+  color: var(--color-sarfees-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Utility presets used across screens */
+.surface-card {
+  background-color: var(--color-sarfees-dark-2);
+  border: 1px solid var(--color-sarfees-border);
+  border-radius: 12px;
+}
+
+.surface-elevated {
+  background-color: var(--color-sarfees-dark-3);
+  border: 1px solid var(--color-sarfees-border);
+  border-radius: 10px;
+}
+
+.btn-primary {
+  background-color: var(--color-sarfees-gold);
+  color: #1A1A1A;
+  font-weight: 800;
+  border-radius: 10px;
+  padding: 10px 18px;
+  transition: background-color 150ms ease;
+}
+.btn-primary:hover { background-color: var(--color-sarfees-gold-dark); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-secondary {
+  background-color: transparent;
+  color: var(--color-sarfees-gold);
+  border: 1.5px solid rgba(250, 190, 44, 0.5);
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 10px 18px;
+  transition: background-color 150ms ease;
+}
+.btn-secondary:hover { background-color: rgba(250, 190, 44, 0.08); }
+
+.btn-danger {
+  background-color: transparent;
+  color: #FF3B30;
+  border: 1.5px solid rgba(255, 59, 48, 0.4);
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 10px 18px;
+  transition: background-color 150ms ease;
+}
+.btn-danger:hover { background-color: rgba(255, 59, 48, 0.08); }
+
+.input-field {
+  width: 100%;
+  background-color: var(--color-sarfees-dark-3);
+  border: 1.5px solid var(--color-sarfees-border);
+  color: var(--color-sarfees-text);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 150ms ease;
+}
+.input-field:focus {
+  border-color: rgba(250, 190, 44, 0.5);
+}
+.input-field::placeholder {
+  color: var(--color-sarfees-soft);
+}
+
+.field-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--color-sarfees-gold);
+  margin-bottom: 6px;
+  display: block;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 6px;
+  background-color: var(--color-sarfees-dark-3);
+}
+.status-pill.active   { color: #2E7D32; border: 1px solid rgba(46,125,50,0.35); }
+.status-pill.inactive { color: var(--color-sarfees-muted); border: 1px solid var(--color-sarfees-border); }
+.status-pill.on_trip  { color: var(--color-sarfees-gold); border: 1px solid rgba(250,190,44,0.35); }
+.status-pill.suspended{ color: var(--color-sarfees-error); border: 1px solid rgba(198,40,40,0.35); }

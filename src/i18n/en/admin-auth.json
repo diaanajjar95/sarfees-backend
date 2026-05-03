@@ -1,0 +1,6 @@
+{
+  "Invalid credentials": "Invalid email or password.",
+  "Account disabled": "This admin account has been disabled.",
+  "Access denied": "Access denied.",
+  "Password must change": "New password must differ from the current one."
+}

@@ -1,0 +1,10 @@
+{
+  "Not registered": "This number is not registered as a Sarfees driver. Please contact support.",
+  "Account suspended": "Your driver account is suspended. Please contact support.",
+  "Account locked": "Account temporarily locked due to too many failed attempts.",
+  "Too many requests": "Too many OTP requests. Please try again later.",
+  "OTP expired": "OTP has expired.",
+  "Invalid OTP": "Invalid OTP.",
+  "Locked for 10 minutes": "Too many failed attempts. Locked for 10 minutes.",
+  "Access Denied": "Access Denied."
+}

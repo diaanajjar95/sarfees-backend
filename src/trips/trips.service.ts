@@ -2,8 +2,9 @@ import { BadRequestException, Injectable, ForbiddenException, NotFoundException 
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { TripRequest } from './entities/trip-request.entity';
-import { Driver } from './entities/driver.entity';
+import { Driver } from '../drivers/driver.entity';
 import { DriverLocation } from './entities/driver-location.entity';
+import { MatchingService } from '../matching/matching.service';
 import { TripStatus } from '../shared/enums/trip-status.enum';
 import { EstimateTripDto, CreateTripDto } from './dto/create-trip.dto';
 import {
@@ -16,7 +17,10 @@ import {
 import { I18nContext } from 'nestjs-i18n';
 import { PaginationQueryDto, PaginatedResponse } from '../shared/dto/pagination-query.dto';
 
-/** Statuses that count as "active" — trip is in progress or driver is on the way */
+/**
+ * Statuses where a driver has been assigned and is moving — used to gate
+ * driver location pings. PENDING is excluded because there's no driver yet.
+ */
 const ACTIVE_STATUSES = [
   TripStatus.MATCHED,
   TripStatus.DRIVER_EN_ROUTE,
@@ -24,6 +28,13 @@ const ACTIVE_STATUSES = [
   TripStatus.TRIP_IN_PROGRESS,
   TripStatus.ARRIVING_AT_DROPOFF,
 ];
+
+/**
+ * Statuses the passenger should see on /trips/active. Includes PENDING so the
+ * mobile app can show a "matching you with a driver" state immediately after
+ * the request is created — matcher / manual ops assignment runs asynchronously.
+ */
+const PASSENGER_ACTIVE_STATUSES = [TripStatus.PENDING, ...ACTIVE_STATUSES];
 
 /** Valid status transition map — prevents invalid jumps */
 const VALID_TRANSITIONS: Record<TripStatus, TripStatus[]> = {
@@ -48,6 +59,8 @@ export class TripsService {
 
     @InjectRepository(DriverLocation)
     private driverLocationRepository: Repository<DriverLocation>,
+
+    private readonly matchingService: MatchingService,
   ) {}
 
   // ─── Existing endpoints ────────────────────────────────────
@@ -102,7 +115,26 @@ export class TripsService {
       status: TripStatus.PENDING,
     });
 
-    return this.tripsRepository.save(trip);
+    const saved = await this.tripsRepository.save(trip);
+
+    // Auto-match: try to find an active driver and offer the trip immediately.
+    // Failure here MUST NOT roll back the passenger's request — we keep it as
+    // PENDING so ops can assign manually from /admin/passenger-requests.
+    try {
+      const reloaded = await this.tripsRepository.findOne({
+        where: { id: saved.id },
+        relations: ['departureCity', 'arrivalCity'],
+      });
+      if (reloaded) {
+        await this.matchingService.attemptMatch(reloaded);
+      }
+    } catch (err) {
+      // Logged inside MatchingService; swallow here to keep createRequest's
+      // public contract unchanged.
+      void err;
+    }
+
+    return saved;
   }
 
   async getUserTrips(userId: number, query: PaginationQueryDto): Promise<PaginatedResponse<TripRequest>> {
@@ -142,7 +174,7 @@ export class TripsService {
     const trip = await this.tripsRepository.findOne({
       where: {
         passenger: { id: userId },
-        status: In(ACTIVE_STATUSES),
+        status: In(PASSENGER_ACTIVE_STATUSES),
       },
       relations: ['driver', 'departureCity', 'arrivalCity'],
       order: { createdAt: 'DESC' },
@@ -354,10 +386,12 @@ export class TripsService {
   // ─── Helpers ───────────────────────────────────────────────
 
   private mapDriverInfo(driver: Driver): DriverInfoDto {
+    const [firstName, ...rest] = (driver.name ?? '').trim().split(/\s+/);
+    const lastName = rest.join(' ');
     return {
       id: driver.id,
-      firstName: driver.firstName,
-      lastName: driver.lastName,
+      firstName: firstName || '',
+      lastName: lastName || '',
       profilePhotoUrl: driver.profilePhotoUrl || null,
       vehicleMake: driver.vehicleMake,
       vehicleModel: driver.vehicleModel,

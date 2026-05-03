@@ -56,6 +56,13 @@ export class PackageDelivery {
   @Column({ default: false })
   termsAccepted: boolean;
 
+  // Scheduling — mirrors TripRequest.travelDate / isImmediate semantics.
+  @Column({ type: 'timestamp', nullable: true })
+  pickupDate: Date;
+
+  @Column({ default: false })
+  isImmediate: boolean;
+
   // Status & tracking
   @Column({ type: 'enum', enum: PackageStatus, default: PackageStatus.PENDING })
   status: PackageStatus;

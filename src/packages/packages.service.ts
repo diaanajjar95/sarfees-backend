@@ -1,12 +1,29 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DeepPartial, Repository } from 'typeorm';
+import { DeepPartial, In, Repository } from 'typeorm';
 import { PackageDelivery } from './entities/package-delivery.entity';
 import { PackageSize } from '../shared/enums/package-size.enum';
 import { PackageStatus } from '../shared/enums/package-status.enum';
 import { EstimatePackageDto, CreatePackageDeliveryDto } from './dto/create-package-delivery.dto';
 import { PaginationQueryDto, PaginatedResponse } from '../shared/dto/pagination-query.dto';
 import { I18nContext } from 'nestjs-i18n';
+
+/**
+ * Sender-facing "active" statuses: anything not delivered or cancelled. Mirrors
+ * PASSENGER_ACTIVE_STATUSES on the trips side so the mobile app can show a live
+ * delivery card from the moment the request is created.
+ */
+const ACTIVE_PACKAGE_STATUSES = [
+  PackageStatus.PENDING,
+  PackageStatus.MATCHED,
+  PackageStatus.PICKED_UP,
+  PackageStatus.IN_TRANSIT,
+];
 
 @Injectable()
 export class PackagesService {
@@ -52,6 +69,32 @@ export class PackagesService {
       );
     }
 
+    // Pickup scheduling — mirrors TripsService.createRequest validation.
+    let pickupDate: Date;
+    if (dto.isImmediate) {
+      pickupDate = new Date();
+    } else {
+      if (!dto.pickupDate) {
+        throw new BadRequestException(
+          I18nContext.current()?.t('packages.Pickup date required'),
+        );
+      }
+      pickupDate = new Date(dto.pickupDate);
+      const now = new Date();
+      if (pickupDate < now) {
+        throw new BadRequestException(
+          I18nContext.current()?.t('packages.Past date'),
+        );
+      }
+      const thirtyDaysAhead = new Date();
+      thirtyDaysAhead.setDate(thirtyDaysAhead.getDate() + 30);
+      if (pickupDate > thirtyDaysAhead) {
+        throw new BadRequestException(
+          I18nContext.current()?.t('packages.Max 30 days'),
+        );
+      }
+    }
+
     const estimate = this.estimateFee(dto);
 
     const deliveryData: DeepPartial<PackageDelivery> = {
@@ -67,6 +110,8 @@ export class PackagesService {
       receiverPhone: dto.receiverPhone,
       deliveryFee: estimate.deliveryFee,
       termsAccepted: dto.termsAccepted,
+      pickupDate,
+      isImmediate: dto.isImmediate,
       status: PackageStatus.PENDING,
     };
 
@@ -104,6 +149,27 @@ export class PackagesService {
         hasPreviousPage: page > 1,
       },
     };
+  }
+
+  /**
+   * Returns the sender's most-recent live package — anything not delivered
+   * or cancelled. 404 when the sender has no active delivery.
+   */
+  async getActivePackage(userId: number): Promise<PackageDelivery> {
+    const delivery = await this.packagesRepository.findOne({
+      where: {
+        sender: { id: userId },
+        status: In(ACTIVE_PACKAGE_STATUSES),
+      },
+      relations: ['departureCity', 'arrivalCity'],
+      order: { createdAt: 'DESC' },
+    });
+    if (!delivery) {
+      throw new NotFoundException(
+        I18nContext.current()?.t('packages.No active package'),
+      );
+    }
+    return delivery;
   }
 
   async getPackageById(id: number, userId: number) {
