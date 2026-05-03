@@ -1,6 +1,21 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { I18nContext } from 'nestjs-i18n';
+import { readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { MobilePlatform } from './dto/init-query.dto';
+
+export interface LocalizedDocument {
+  ar: string;
+  en: string;
+  /** ISO date string of the last file edit; client can prompt re-acceptance when this changes. */
+  updatedAt: string;
+}
+
+export interface LegalPayload {
+  terms: LocalizedDocument;
+  privacy: LocalizedDocument;
+}
 
 export interface PlatformVersionInfo {
   latestVersion: string;
@@ -18,6 +33,15 @@ export interface ForceUpdateResult {
 
 @Injectable()
 export class AppConfigService {
+  private readonly logger = new Logger(AppConfigService.name);
+
+  /**
+   * Legal documents are read once at first access and memoised. Replace with a
+   * DB-backed admin-editable store if/when ops needs to update T&C without
+   * a redeploy.
+   */
+  private legalCache: LegalPayload | null = null;
+
   constructor(private readonly config: ConfigService) {}
 
   /** Per-platform version metadata driven by env vars. */
@@ -115,5 +139,56 @@ export class AppConfigService {
       latestVersion: version.latestVersion,
       storeUrl: version.storeUrl,
     };
+  }
+
+  /**
+   * Resolved request language from Accept-Language header (via nestjs-i18n).
+   * Falls back to DEFAULT_LANGUAGE env (or 'en') when called outside an i18n
+   * request scope.
+   */
+  getCurrentLanguage(): string {
+    return (
+      I18nContext.current()?.lang ??
+      this.config.get<string>('DEFAULT_LANGUAGE') ??
+      'en'
+    );
+  }
+
+  /** Terms & conditions and privacy policy in both supported languages. */
+  getLegal(): LegalPayload {
+    if (!this.legalCache) {
+      this.legalCache = {
+        terms: this.readDoc('terms'),
+        privacy: this.readDoc('privacy'),
+      };
+    }
+    return this.legalCache;
+  }
+
+  private readDoc(name: 'terms' | 'privacy'): LocalizedDocument {
+    // Resolves to dist/app-config/legal/ at runtime; nest-cli copies the .md
+    // assets into dist via the assets rule.
+    const dir = join(__dirname, 'legal');
+    const en = this.safeRead(join(dir, `${name}.en.md`));
+    const ar = this.safeRead(join(dir, `${name}.ar.md`));
+    let updatedAt = new Date(0).toISOString();
+    try {
+      const enStat = statSync(join(dir, `${name}.en.md`));
+      const arStat = statSync(join(dir, `${name}.ar.md`));
+      const newest = Math.max(enStat.mtimeMs, arStat.mtimeMs);
+      updatedAt = new Date(newest).toISOString();
+    } catch {
+      /* keep epoch fallback */
+    }
+    return { en, ar, updatedAt };
+  }
+
+  private safeRead(path: string): string {
+    try {
+      return readFileSync(path, 'utf8');
+    } catch (err) {
+      this.logger.warn(`Legal doc missing at ${path}: ${(err as Error).message}`);
+      return '';
+    }
   }
 }

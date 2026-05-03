@@ -17,7 +17,10 @@ import {
 import { I18nContext } from 'nestjs-i18n';
 import { PaginationQueryDto, PaginatedResponse } from '../shared/dto/pagination-query.dto';
 
-/** Statuses that count as "active" — trip is in progress or driver is on the way */
+/**
+ * Statuses where a driver has been assigned and is moving — used to gate
+ * driver location pings. PENDING is excluded because there's no driver yet.
+ */
 const ACTIVE_STATUSES = [
   TripStatus.MATCHED,
   TripStatus.DRIVER_EN_ROUTE,
@@ -25,6 +28,13 @@ const ACTIVE_STATUSES = [
   TripStatus.TRIP_IN_PROGRESS,
   TripStatus.ARRIVING_AT_DROPOFF,
 ];
+
+/**
+ * Statuses the passenger should see on /trips/active. Includes PENDING so the
+ * mobile app can show a "matching you with a driver" state immediately after
+ * the request is created — matcher / manual ops assignment runs asynchronously.
+ */
+const PASSENGER_ACTIVE_STATUSES = [TripStatus.PENDING, ...ACTIVE_STATUSES];
 
 /** Valid status transition map — prevents invalid jumps */
 const VALID_TRANSITIONS: Record<TripStatus, TripStatus[]> = {
@@ -164,7 +174,7 @@ export class TripsService {
     const trip = await this.tripsRepository.findOne({
       where: {
         passenger: { id: userId },
-        status: In(ACTIVE_STATUSES),
+        status: In(PASSENGER_ACTIVE_STATUSES),
       },
       relations: ['driver', 'departureCity', 'arrivalCity'],
       order: { createdAt: 'DESC' },

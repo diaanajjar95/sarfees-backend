@@ -24,6 +24,8 @@ export class AppConfigController {
     );
     const links = this.appConfig.getAppLinks();
     const settings = this.appConfig.getSettings();
+    const currentLanguage = this.appConfig.getCurrentLanguage();
+    const legal = this.appConfig.getLegal();
 
     return {
       version: {
@@ -35,6 +37,8 @@ export class AppConfigController {
       },
       links,
       settings,
+      currentLanguage,
+      legal,
     };
   }
 

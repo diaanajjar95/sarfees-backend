@@ -70,6 +70,18 @@ export class PackagesController {
     return this.packagesService.getUserPackages(req.user.userId, query);
   }
 
+  @ApiOperation({
+    summary: "Get the sender's currently active package",
+    description:
+      'Returns the most recent package delivery in PENDING / MATCHED / PICKED_UP / IN_TRANSIT. 404 when none exists. Mirrors GET /trips/active.',
+  })
+  @ApiResponse({ status: 200, description: 'Active package delivery' })
+  @ApiResponse({ status: 404, description: 'No active package' })
+  @Get('active')
+  getActivePackage(@Req() req: any) {
+    return this.packagesService.getActivePackage(req.user.userId);
+  }
+
   @ApiOperation({ summary: 'Get a specific package delivery by ID' })
   @ApiResponse({ status: 200, description: 'Package delivery details' })
   @Get(':id')

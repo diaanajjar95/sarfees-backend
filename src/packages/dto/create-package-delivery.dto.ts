@@ -1,5 +1,6 @@
 import {
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -69,4 +70,21 @@ export class CreatePackageDeliveryDto extends EstimatePackageDto {
   @IsBoolean()
   @IsNotEmpty()
   termsAccepted: boolean;
+
+  @ApiProperty({
+    example: true,
+    description:
+      'true = pick up as soon as a driver matches; pickupDate is then ignored and set to now server-side.',
+  })
+  @IsBoolean()
+  isImmediate: boolean;
+
+  @ApiPropertyOptional({
+    example: '2026-05-03T00:00:00Z',
+    description:
+      'ISO 8601 scheduled pickup time. Required when isImmediate is false. Must be in the future and within 30 days. Ignored (overwritten with `now` server-side) when isImmediate is true.',
+  })
+  @IsOptional()
+  @IsDateString()
+  pickupDate?: string;
 }
