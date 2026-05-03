@@ -37,16 +37,30 @@ import * as path from 'path';
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        type: 'postgres',
-        host: configService.get<string>('DB_HOST'),
-        port: configService.get<number>('DB_PORT'),
-        username: configService.get<string>('DB_USERNAME'),
-        password: configService.get<string>('DB_PASSWORD'),
-        database: configService.get<string>('DB_NAME'),
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        synchronize: true, // Auto-create tables (dev only)
-      }),
+      useFactory: (configService: ConfigService) => {
+        // Render-managed Postgres requires SSL. Enable it when DB_SSL=true,
+        // or auto-detect when host is not localhost (covers cloud DBs in dev).
+        const dbHost = configService.get<string>('DB_HOST') ?? 'localhost';
+        const sslExplicit = configService.get<string>('DB_SSL');
+        const useSsl =
+          sslExplicit === 'true' ||
+          (sslExplicit !== 'false' &&
+            dbHost !== 'localhost' &&
+            dbHost !== '127.0.0.1');
+        return {
+          type: 'postgres',
+          host: dbHost,
+          port: configService.get<number>('DB_PORT'),
+          username: configService.get<string>('DB_USERNAME'),
+          password: configService.get<string>('DB_PASSWORD'),
+          database: configService.get<string>('DB_NAME'),
+          entities: [__dirname + '/**/*.entity{.ts,.js}'],
+          synchronize: true, // Auto-create tables (dev only)
+          // Render's managed certs aren't in Node's CA bundle; skip strict
+          // verification but still require encrypted transport.
+          ssl: useSsl ? { rejectUnauthorized: false } : false,
+        };
+      },
       inject: [ConfigService],
     }),
     UsersModule,
