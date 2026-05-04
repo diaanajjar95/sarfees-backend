@@ -40,12 +40,16 @@ export class TripsController {
 
   // ─── Active Trip Status (SAR-30) ──────────────────────────
 
-  @ApiOperation({ summary: 'Get the current active trip for the passenger' })
-  @ApiResponse({ status: 200, description: 'Active trip status with driver info and location' })
-  @ApiResponse({ status: 404, description: 'No active trip found' })
+  @ApiOperation({
+    summary: "Get the user's currently active item (trip OR package)",
+    description:
+      'Returns the most-recent active item for the user — whichever is newer between an active trip and an active package — wrapped in a `{ type, trip, package }` discriminator. Active trip statuses include PENDING; active package statuses are PENDING/MATCHED/PICKED_UP/IN_TRANSIT. Returns 404 when the user has neither.',
+  })
+  @ApiResponse({ status: 200, description: 'Active trip or active package' })
+  @ApiResponse({ status: 404, description: 'No active trip or package found' })
   @Get('active')
-  getActiveTrip(@Req() req: any) {
-    return this.tripsService.getActiveTrip(req.user.userId);
+  getActiveItem(@Req() req: any) {
+    return this.tripsService.getActiveItem(req.user.userId);
   }
 
   @ApiOperation({ summary: 'Get trip status by ID' })

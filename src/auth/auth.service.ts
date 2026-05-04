@@ -129,10 +129,12 @@ export class AuthService {
     const tokens = await this.getTokens(finalUser);
     await this.updateRefreshToken(finalUser.id, tokens.refreshToken);
 
+    const tripCount = await this.usersService.getTripCount(finalUser.id);
+
     return {
       ...tokens,
       isNewUser,
-      user: UserResponseDto.from(finalUser),
+      user: UserResponseDto.from(finalUser, tripCount),
     };
   }
 

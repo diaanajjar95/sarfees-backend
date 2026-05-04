@@ -45,7 +45,8 @@ export class UsersController {
       // but keeps types honest
       throw new Error('User not found');
     }
-    return UserResponseDto.from(user);
+    const tripCount = await this.usersService.getTripCount(user.id);
+    return UserResponseDto.from(user, tripCount);
   }
 
   @ApiBearerAuth()
@@ -86,6 +87,7 @@ export class UsersController {
       completeProfileDto,
       photoPath,
     );
-    return UserResponseDto.from(user);
+    const tripCount = await this.usersService.getTripCount(user.id);
+    return UserResponseDto.from(user, tripCount);
   }
 }

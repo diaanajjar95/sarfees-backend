@@ -10,27 +10,89 @@ services:
     runtime: docker
     plan: free
     envVars:
+      # ─── Database (Render injects values from the named database) ─────
       - key: DB_HOST
         fromDatabase:
           name: sarfees-db
-          property: dpg-d7dckqf7f7vs73errg0g-a
+          property: host
       - key: DB_PORT
         fromDatabase:
           name: sarfees-db
-          property: 5432
+          property: port
       - key: DB_USERNAME
         fromDatabase:
           name: sarfees-db
-          property: sarfees_db_user
+          property: user
       - key: DB_PASSWORD
         fromDatabase:
           name: sarfees-db
-          property: OdY46ROXxdqOTKGHyOiQclVL69cmzcrl
+          property: password
       - key: DB_NAME
         fromDatabase:
           name: sarfees-db
-          property: sarfees_db
+          property: database
+
+      # ─── Runtime ─────────────────────────────────────────────────────
+      # Production gate: disables the dev-only POST /admin/dev/driver-trips
+      # seeder and switches Next.js cookies to Secure mode.
+      - key: NODE_ENV
+        value: production
+
+      # ─── Passenger app JWTs ──────────────────────────────────────────
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
         generateValue: true
+
+      # ─── Driver app JWTs ─────────────────────────────────────────────
+      - key: JWT_DRIVER_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_DRIVER_REFRESH_SECRET
+        generateValue: true
+
+      # ─── Admin portal JWTs ───────────────────────────────────────────
+      # TTLs default to 30m access / 7d refresh in code — leave unset in prod.
+      - key: JWT_ADMIN_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_ADMIN_REFRESH_SECRET
+        generateValue: true
+
+      # ─── CORS for the admin portal ───────────────────────────────────
+      # Comma-separated list of origins. Replace with the real admin portal
+      # URL once it's deployed (Vercel / Render Static / etc).
+      - key: ADMIN_PORTAL_ORIGIN
+        value: https://sarfees-admin.example.com
+
+      # ─── Auto-matcher ────────────────────────────────────────────────
+      - key: MATCHING_ENABLED
+        value: "true"
+
+      # ─── Mobile app version gating (used by GET /app/init + force-update) ─
+      - key: IOS_LATEST_VERSION
+        value: 1.0.0
+      - key: IOS_MIN_VERSION
+        value: 1.0.0
+      - key: IOS_STORE_URL
+        value: https://apps.apple.com/app/idPLACEHOLDER
+      - key: ANDROID_LATEST_VERSION
+        value: 1.0.0
+      - key: ANDROID_MIN_VERSION
+        value: 1.0.0
+      - key: ANDROID_STORE_URL
+        value: https://play.google.com/store/apps/details?id=PLACEHOLDER
+
+      # ─── Legal / support links ───────────────────────────────────────
+      - key: TERMS_URL
+        value: https://sarfees.com/legal/terms
+      - key: PRIVACY_URL
+        value: https://sarfees.com/legal/privacy
+      - key: SUPPORT_EMAIL
+        value: support@sarfees.com
+
+      # ─── Runtime feature flags ───────────────────────────────────────
+      - key: MAINTENANCE_MODE
+        value: "false"
+      - key: DEFAULT_LANGUAGE
+        value: en
+      - key: SUPPORTED_LANGUAGES
+        value: en,ar

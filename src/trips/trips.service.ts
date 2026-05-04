@@ -5,12 +5,16 @@ import { TripRequest } from './entities/trip-request.entity';
 import { Driver } from '../drivers/driver.entity';
 import { DriverLocation } from './entities/driver-location.entity';
 import { MatchingService } from '../matching/matching.service';
+import { PackageDelivery } from '../packages/entities/package-delivery.entity';
+import { PackageStatus } from '../shared/enums/package-status.enum';
 import { TripStatus } from '../shared/enums/trip-status.enum';
 import { EstimateTripDto, CreateTripDto } from './dto/create-trip.dto';
 import {
   UpdateTripStatusDto,
   UpdateDriverLocationDto,
   ActiveTripStatusResponseDto,
+  ActiveItemResponseDto,
+  ActivePackageSummaryDto,
   DriverInfoDto,
   DriverLocationDto,
 } from './dto/active-trip.dto';
@@ -36,6 +40,18 @@ const ACTIVE_STATUSES = [
  */
 const PASSENGER_ACTIVE_STATUSES = [TripStatus.PENDING, ...ACTIVE_STATUSES];
 
+/**
+ * Sender-facing "active" package statuses — anything not delivered or cancelled.
+ * Mirrors PASSENGER_ACTIVE_STATUSES so the mobile home screen sees an active
+ * package the moment the request is created.
+ */
+const SENDER_ACTIVE_PACKAGE_STATUSES = [
+  PackageStatus.PENDING,
+  PackageStatus.MATCHED,
+  PackageStatus.PICKED_UP,
+  PackageStatus.IN_TRANSIT,
+];
+
 /** Valid status transition map — prevents invalid jumps */
 const VALID_TRANSITIONS: Record<TripStatus, TripStatus[]> = {
   [TripStatus.PENDING]: [TripStatus.MATCHED, TripStatus.CANCELLED],
@@ -59,6 +75,9 @@ export class TripsService {
 
     @InjectRepository(DriverLocation)
     private driverLocationRepository: Repository<DriverLocation>,
+
+    @InjectRepository(PackageDelivery)
+    private packagesRepository: Repository<PackageDelivery>,
 
     private readonly matchingService: MatchingService,
   ) {}
@@ -165,6 +184,114 @@ export class TripsService {
   }
 
   // ─── Active Trip Status (SAR-30) ──────────────────────────
+
+  /**
+   * Mobile home-screen card: returns whichever is more recent — the user's
+   * latest active trip or their latest active package — wrapped in a
+   * `{ type, trip, package }` discriminator so the client can branch.
+   *
+   * Returns 404 if the user has neither.
+   */
+  async getActiveItem(userId: number): Promise<ActiveItemResponseDto> {
+    const [trip, pkg] = await Promise.all([
+      this.tripsRepository.findOne({
+        where: {
+          passenger: { id: userId },
+          status: In(PASSENGER_ACTIVE_STATUSES),
+        },
+        relations: ['driver', 'departureCity', 'arrivalCity'],
+        order: { createdAt: 'DESC' },
+      }),
+      this.packagesRepository.findOne({
+        where: {
+          sender: { id: userId },
+          status: In(SENDER_ACTIVE_PACKAGE_STATUSES),
+        },
+        relations: ['departureCity', 'arrivalCity'],
+        order: { createdAt: 'DESC' },
+      }),
+    ]);
+
+    // Pick whichever was created last; tie-break to trip so the mobile app's
+    // "most useful" view (a real ride) wins over a queued package.
+    const tripWins =
+      trip &&
+      (!pkg || trip.createdAt.getTime() >= pkg.createdAt.getTime());
+    const packageWins =
+      pkg && (!trip || pkg.createdAt.getTime() > trip.createdAt.getTime());
+
+    if (tripWins) {
+      return {
+        type: 'trip',
+        trip: await this.buildActiveTripResponse(trip),
+        package: null,
+      };
+    }
+    if (packageWins) {
+      return {
+        type: 'package',
+        trip: null,
+        package: this.toActivePackageSummary(pkg),
+      };
+    }
+
+    throw new NotFoundException(
+      I18nContext.current()?.t('trips.No active trip'),
+    );
+  }
+
+  private toActivePackageSummary(p: PackageDelivery): ActivePackageSummaryDto {
+    return {
+      id: p.id,
+      status: p.status,
+      departureCity: p.departureCity?.nameEn ?? null,
+      arrivalCity: p.arrivalCity?.nameEn ?? null,
+      pickupLocation: p.pickupLocation,
+      dropOffLocation: p.dropOffLocation,
+      packageSize: p.packageSize,
+      packageDescription: p.packageDescription ?? null,
+      packagePhotoUrl: p.packagePhotoUrl ?? null,
+      receiverName: p.receiverName,
+      receiverPhone: p.receiverPhone,
+      deliveryFee: Number(p.deliveryFee),
+      isImmediate: p.isImmediate,
+      pickupDate: p.pickupDate ?? null,
+      createdAt: p.createdAt,
+    };
+  }
+
+  private async buildActiveTripResponse(
+    trip: TripRequest,
+  ): Promise<ActiveTripStatusResponseDto> {
+    let driverLocation: DriverLocationDto | null = null;
+    if (trip.driver) {
+      const latestLocation = await this.driverLocationRepository.findOne({
+        where: { trip: { id: trip.id }, driver: { id: trip.driver.id } },
+        order: { recordedAt: 'DESC' },
+      });
+      if (latestLocation) {
+        driverLocation = {
+          lat: Number(latestLocation.lat),
+          lng: Number(latestLocation.lng),
+          heading: latestLocation.heading ? Number(latestLocation.heading) : null,
+          speed: latestLocation.speed ? Number(latestLocation.speed) : null,
+          recordedAt: latestLocation.recordedAt,
+        };
+      }
+    }
+    return {
+      tripId: trip.id,
+      status: trip.status,
+      etaToPickup: trip.etaToPickup || null,
+      etaToDestination: trip.etaToDestination || null,
+      departureLocation: trip.departureLocation,
+      arrivalLocation: trip.arrivalLocation,
+      driver: trip.driver ? this.mapDriverInfo(trip.driver) : null,
+      driverLocation,
+      statusUpdatedAt: trip.statusUpdatedAt || null,
+      createdAt: trip.createdAt,
+    };
+  }
 
   /**
    * Get the passenger's currently active trip with driver info and location.

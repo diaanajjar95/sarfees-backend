@@ -88,6 +88,41 @@ export class ActiveTripStatusResponseDto {
   createdAt: Date;
 }
 
+export class ActivePackageSummaryDto {
+  @ApiProperty({ example: 12 }) id: number;
+  @ApiProperty({ example: 'PENDING' }) status: string;
+  @ApiPropertyOptional({ example: 'Amman' }) departureCity: string | null;
+  @ApiPropertyOptional({ example: 'Irbid' }) arrivalCity: string | null;
+  @ApiProperty() pickupLocation: { lat: number; lng: number };
+  @ApiProperty() dropOffLocation: { lat: number; lng: number };
+  @ApiProperty({ example: 'SMALL' }) packageSize: string;
+  @ApiPropertyOptional() packageDescription: string | null;
+  @ApiPropertyOptional() packagePhotoUrl: string | null;
+  @ApiProperty() receiverName: string;
+  @ApiProperty() receiverPhone: string;
+  @ApiProperty({ example: 5.0 }) deliveryFee: number;
+  @ApiProperty() isImmediate: boolean;
+  @ApiPropertyOptional() pickupDate: Date | null;
+  @ApiProperty() createdAt: Date;
+}
+
+/**
+ * Discriminated union returned by GET /trips/active. The endpoint returns
+ * EITHER the user's most recent active trip OR their most recent active
+ * package — whichever was created last. `type` tells the mobile app which
+ * payload field to read; the other one is null.
+ */
+export class ActiveItemResponseDto {
+  @ApiProperty({ enum: ['trip', 'package'] })
+  type: 'trip' | 'package';
+
+  @ApiPropertyOptional({ type: ActiveTripStatusResponseDto })
+  trip: ActiveTripStatusResponseDto | null;
+
+  @ApiPropertyOptional({ type: ActivePackageSummaryDto })
+  package: ActivePackageSummaryDto | null;
+}
+
 // --- Request DTOs ---
 
 export class UpdateTripStatusDto {

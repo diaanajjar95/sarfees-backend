@@ -3,12 +3,16 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
 import { User } from './user.entity';
 import { CompleteProfileDto } from './dto/complete-profile.dto';
+import { TripRequest } from '../trips/entities/trip-request.entity';
+import { TripStatus } from '../shared/enums/trip-status.enum';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private usersRepository: Repository<User>,
+    @InjectRepository(TripRequest)
+    private tripsRepository: Repository<TripRequest>,
   ) {}
 
   async findByPhone(
@@ -30,6 +34,20 @@ export class UsersService {
 
   async findById(id: number): Promise<User | null> {
     return this.usersRepository.findOneBy({ id });
+  }
+
+  /**
+   * Number of completed trips for a passenger. Mirrors the driver's
+   * `totalTrips` counter. Computed on demand so no schema/drift risk; if
+   * /users/me read traffic ever becomes a hot path we can denormalize.
+   */
+  async getTripCount(userId: number): Promise<number> {
+    return this.tripsRepository.count({
+      where: {
+        passenger: { id: userId },
+        status: TripStatus.COMPLETED,
+      },
+    });
   }
 
   async completeProfile(

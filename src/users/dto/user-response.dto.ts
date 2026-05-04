@@ -17,10 +17,15 @@ export class UserResponseDto {
   @ApiProperty({ nullable: true }) email: string | null;
   @ApiProperty({ nullable: true }) profilePhotoUrl: string | null;
   @ApiProperty() isProfileCompleted: boolean;
+  @ApiProperty({
+    example: 12,
+    description: 'Number of completed trips this passenger has taken.',
+  })
+  tripCount: number;
   @ApiProperty() createdAt: Date;
   @ApiProperty() updatedAt: Date;
 
-  static from(user: User): UserResponseDto {
+  static from(user: User, tripCount = 0): UserResponseDto {
     return {
       id: user.id,
       phoneNumber: user.phoneNumber,
@@ -31,6 +36,7 @@ export class UserResponseDto {
       email: user.email ?? null,
       profilePhotoUrl: user.profilePhotoUrl ?? null,
       isProfileCompleted: user.isProfileCompleted,
+      tripCount,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
