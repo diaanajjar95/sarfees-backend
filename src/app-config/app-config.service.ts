@@ -3,11 +3,16 @@ import { ConfigService } from '@nestjs/config';
 import { I18nContext } from 'nestjs-i18n';
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { marked } from 'marked';
 import { MobilePlatform } from './dto/init-query.dto';
 
 export interface LocalizedDocument {
+  /** Arabic body, rendered HTML. */
   ar: string;
+  /** English body, rendered HTML. */
   en: string;
+  /** Output format of `ar` and `en`. Always `'html'` for now. */
+  format: 'html';
   /** ISO date string of the last file edit; client can prompt re-acceptance when this changes. */
   updatedAt: string;
 }
@@ -169,8 +174,15 @@ export class AppConfigService {
     // Resolves to dist/app-config/legal/ at runtime; nest-cli copies the .md
     // assets into dist via the assets rule.
     const dir = join(__dirname, 'legal');
-    const en = this.safeRead(join(dir, `${name}.en.md`));
-    const ar = this.safeRead(join(dir, `${name}.ar.md`));
+    const enMd = this.safeRead(join(dir, `${name}.en.md`));
+    const arMd = this.safeRead(join(dir, `${name}.ar.md`));
+
+    // Render markdown to HTML for the mobile client. `async: false` so the
+    // call returns a string synchronously (we're already inside the cache
+    // builder; no need to await per request).
+    const en = enMd ? (marked.parse(enMd, { async: false }) as string) : '';
+    const ar = arMd ? (marked.parse(arMd, { async: false }) as string) : '';
+
     let updatedAt = new Date(0).toISOString();
     try {
       const enStat = statSync(join(dir, `${name}.en.md`));
@@ -180,7 +192,7 @@ export class AppConfigService {
     } catch {
       /* keep epoch fallback */
     }
-    return { en, ar, updatedAt };
+    return { en, ar, format: 'html', updatedAt };
   }
 
   private safeRead(path: string): string {
