@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 import { TripStatus } from '../../shared/enums/trip-status.enum';
+import { ActiveTripType } from '../../shared/enums/active-trip-type.enum';
 
 // --- Response DTOs ---
 
@@ -109,12 +110,26 @@ export class ActivePackageSummaryDto {
 /**
  * Discriminated union returned by GET /trips/active. The endpoint returns
  * EITHER the user's most recent active trip OR their most recent active
- * package — whichever was created last. `type` tells the mobile app which
- * payload field to read; the other one is null.
+ * package — whichever was created last.
+ *
+ * - `type`     — technical discriminator (`'trip'` vs `'package'`) telling
+ *                you which payload field is populated.
+ * - `tripType` — business classification mapped from the same item:
+ *                  trip + isFemaleOnly=false  → 'shared'
+ *                  trip + isFemaleOnly=true   → 'womenOnly'
+ *                  package                    → 'sendPackage'
+ *                Mobile clients should match on `tripType` to pick UI.
  */
 export class ActiveItemResponseDto {
   @ApiProperty({ enum: ['trip', 'package'] })
   type: 'trip' | 'package';
+
+  @ApiProperty({
+    enum: ActiveTripType,
+    description:
+      'Business classification of the active item. Mobile maps this to its TripType enum.',
+  })
+  tripType: ActiveTripType;
 
   @ApiPropertyOptional({ type: ActiveTripStatusResponseDto })
   trip: ActiveTripStatusResponseDto | null;

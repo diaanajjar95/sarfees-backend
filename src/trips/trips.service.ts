@@ -8,6 +8,7 @@ import { MatchingService } from '../matching/matching.service';
 import { PackageDelivery } from '../packages/entities/package-delivery.entity';
 import { PackageStatus } from '../shared/enums/package-status.enum';
 import { TripStatus } from '../shared/enums/trip-status.enum';
+import { ActiveTripType } from '../shared/enums/active-trip-type.enum';
 import { EstimateTripDto, CreateTripDto } from './dto/create-trip.dto';
 import {
   UpdateTripStatusDto,
@@ -161,12 +162,25 @@ export class TripsService {
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
 
-    const [data, totalItems] = await this.tripsRepository.findAndCount({
+    const [rows, totalItems] = await this.tripsRepository.findAndCount({
       where: { passenger: { id: userId } },
+      relations: ['departureCity', 'arrivalCity'],
       order: { createdAt: 'DESC' },
       skip,
       take: limit,
     });
+
+    // Localize the city objects to { id, name } based on the Accept-Language
+    // header (mirrors /cities). Falls back to English when no locale is set.
+    const lang = I18nContext.current()?.lang || 'en';
+    const localizeCity = (c: { id: number; nameEn: string; nameAr: string } | null | undefined) =>
+      c ? { id: c.id, name: lang === 'ar' ? c.nameAr : c.nameEn } : null;
+
+    const data = rows.map((t) => ({
+      ...t,
+      departureCity: localizeCity(t.departureCity),
+      arrivalCity: localizeCity(t.arrivalCity),
+    })) as unknown as TripRequest[];
 
     const totalPages = Math.ceil(totalItems / limit);
 
@@ -223,6 +237,9 @@ export class TripsService {
     if (tripWins) {
       return {
         type: 'trip',
+        tripType: trip.isFemaleOnly
+          ? ActiveTripType.WOMEN_ONLY
+          : ActiveTripType.SHARED,
         trip: await this.buildActiveTripResponse(trip),
         package: null,
       };
@@ -230,6 +247,7 @@ export class TripsService {
     if (packageWins) {
       return {
         type: 'package',
+        tripType: ActiveTripType.SEND_PACKAGE,
         trip: null,
         package: this.toActivePackageSummary(pkg),
       };
