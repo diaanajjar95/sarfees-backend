@@ -13,6 +13,7 @@ import { DriverTripsService } from './driver-trips.service';
 import { DriverTripsController } from './driver-trips.controller';
 import { DriverTripsDevController } from './dev/driver-trips-dev.controller';
 import { DriverNotificationsModule } from '../notifications/driver-notifications.module';
+import { PassengerNotificationsModule } from '../notifications/passenger/passenger-notifications.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { DriverNotificationsModule } from '../notifications/driver-notifications
       PackageDelivery,
     ]),
     DriverNotificationsModule,
+    PassengerNotificationsModule,
   ],
   controllers: [DriverTripsController, DriverTripsDevController],
   providers: [DriverTripsService],

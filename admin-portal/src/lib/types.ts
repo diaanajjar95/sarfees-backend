@@ -117,7 +117,9 @@ export interface CreateDriverPayload {
   language?: 'ar' | 'en';
 }
 
-export type UpdateDriverPayload = Partial<Omit<CreateDriverPayload, 'phoneNumber' | 'countryCode'>>;
+export type UpdateDriverPayload = Partial<
+  Omit<CreateDriverPayload, 'phoneNumber' | 'countryCode'>
+>;
 
 // ─── Trips ─────────────────────────────────────────────────────
 export type DriverTripStatus =
@@ -421,3 +423,33 @@ export interface AdminTripDetail extends ManifestResponse {
   cancellation: TripCancellation | null;
   pricing: TripPricing;
 }
+
+// ─── FAQ ───────────────────────────────────────────────────────
+export interface FaqItem {
+  id: number;
+  slug: string;
+  categoryEn: string;
+  categoryAr: string;
+  questionEn: string;
+  questionAr: string;
+  answerEn: string;
+  answerAr: string;
+  displayOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateFaqItemPayload {
+  slug: string;
+  categoryEn: string;
+  categoryAr: string;
+  questionEn: string;
+  questionAr: string;
+  answerEn: string;
+  answerAr: string;
+  displayOrder?: number;
+  isActive?: boolean;
+}
+
+export type UpdateFaqItemPayload = Partial<Omit<CreateFaqItemPayload, 'slug'>>;

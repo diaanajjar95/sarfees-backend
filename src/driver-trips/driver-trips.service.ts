@@ -47,6 +47,8 @@ import { TripCompletionResponseDto } from './dto/trip-completion.dto';
 import { CancelTripDto, CancelTripResponseDto } from './dto/cancel-trip.dto';
 import { DriverNotificationsService } from '../notifications/driver-notifications.service';
 import { DriverNotificationType } from '../shared/enums/driver-notification-type.enum';
+import { PassengerNotificationsService } from '../notifications/passenger/passenger-notifications.service';
+import { PassengerNotificationType } from '../shared/enums/passenger-notification-type.enum';
 
 const DEFAULT_OFFER_SECONDS = 45;
 const DEFAULT_COMMISSION_RATE = 0.15;
@@ -73,6 +75,7 @@ export class DriverTripsService {
     private readonly packagesRepo: Repository<PackageDelivery>,
     private readonly dataSource: DataSource,
     private readonly notifications: DriverNotificationsService,
+    private readonly passengerNotifications: PassengerNotificationsService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════
@@ -165,14 +168,16 @@ export class DriverTripsService {
       );
     }
 
-    return this.dataSource.transaction(async (mgr) => {
+    const tripRequestIds = await this.collectLinkedTripRequestIds(trip.id);
+    const packageIds = await this.collectLinkedPackageIds(trip.id);
+
+    const manifest = await this.dataSource.transaction(async (mgr) => {
       const now = new Date();
       trip.status = DriverTripStatus.ACCEPTED;
       trip.acceptedAt = now;
       await mgr.save(trip);
 
       // Sync passenger TripRequests: assign driver, transition status
-      const tripRequestIds = await this.collectLinkedTripRequestIds(trip.id);
       if (tripRequestIds.length) {
         await mgr
           .createQueryBuilder()
@@ -187,7 +192,6 @@ export class DriverTripsService {
       }
 
       // Sync package deliveries
-      const packageIds = await this.collectLinkedPackageIds(trip.id);
       if (packageIds.length) {
         await mgr
           .createQueryBuilder()
@@ -199,6 +203,31 @@ export class DriverTripsService {
 
       return this.buildManifest(trip.id);
     });
+
+    // Notify passengers + package senders that a driver has been matched
+    const passengerUserIds =
+      await this.passengerUserIdsForRequests(tripRequestIds);
+    await this.emitPassengerNotifications({
+      userIds: passengerUserIds,
+      type: PassengerNotificationType.REQUEST_MATCHED,
+      titleEn: 'Driver matched',
+      titleAr: 'تم العثور على سائق',
+      bodyEn: 'Your driver has been matched and will be on the way soon.',
+      bodyAr: 'تم تعيين سائق لرحلتك وسيكون في طريقه إليك قريبًا.',
+      payload: { tripId: trip.id },
+    });
+    const senderUserIds = await this.senderUserIdsForPackages(packageIds);
+    await this.emitPassengerNotifications({
+      userIds: senderUserIds,
+      type: PassengerNotificationType.REQUEST_MATCHED,
+      titleEn: 'Driver matched for your package',
+      titleAr: 'تم العثور على سائق لطردك',
+      bodyEn: 'A driver has been assigned to deliver your package.',
+      bodyAr: 'تم تعيين سائق لتوصيل طردك.',
+      payload: { tripId: trip.id },
+    });
+
+    return manifest;
   }
 
   async decline(
@@ -251,7 +280,9 @@ export class DriverTripsService {
       );
     }
 
-    return this.dataSource.transaction(async (mgr) => {
+    const tripRequestIds = await this.collectLinkedTripRequestIds(trip.id);
+
+    const manifest = await this.dataSource.transaction(async (mgr) => {
       const now = new Date();
       trip.status = DriverTripStatus.IN_PROGRESS;
       trip.startedAt = now;
@@ -264,7 +295,6 @@ export class DriverTripsService {
       );
 
       // Sync passenger TripRequests to DRIVER_EN_ROUTE
-      const tripRequestIds = await this.collectLinkedTripRequestIds(trip.id);
       if (tripRequestIds.length) {
         await mgr
           .createQueryBuilder()
@@ -279,6 +309,21 @@ export class DriverTripsService {
 
       return this.buildManifest(trip.id);
     });
+
+    // Notify passengers that the driver is now en route
+    const passengerUserIds =
+      await this.passengerUserIdsForRequests(tripRequestIds);
+    await this.emitPassengerNotifications({
+      userIds: passengerUserIds,
+      type: PassengerNotificationType.DRIVER_EN_ROUTE,
+      titleEn: 'Driver is on the way',
+      titleAr: 'السائق في الطريق إليك',
+      bodyEn: 'Your driver has started the trip and is heading to your pickup point.',
+      bodyAr: 'انطلق سائقك وهو في طريقه إلى نقطة الإقلال.',
+      payload: { tripId: trip.id },
+    });
+
+    return manifest;
   }
 
   async getActiveTrip(driverId: number): Promise<ActiveStateResponseDto> {
@@ -337,7 +382,7 @@ export class DriverTripsService {
       );
     }
 
-    return this.dataSource.transaction(async (mgr) => {
+    const result = await this.dataSource.transaction(async (mgr) => {
       stop.status = DriverTripStopStatus.ARRIVED;
       stop.arrivedAt = new Date();
       await mgr.save(stop);
@@ -348,20 +393,41 @@ export class DriverTripsService {
         where: { stop: { id: stop.id } },
         relations: ['tripRequest'],
       });
+      const boardingRequestIds: number[] = [];
       for (const link of passengerLinks) {
-        const newStatus =
-          link.role === StopPassengerRole.BOARDING
-            ? TripStatus.ARRIVED_AT_PICKUP
-            : TripStatus.ARRIVING_AT_DROPOFF;
+        const isBoarding = link.role === StopPassengerRole.BOARDING;
+        const newStatus = isBoarding
+          ? TripStatus.ARRIVED_AT_PICKUP
+          : TripStatus.ARRIVING_AT_DROPOFF;
         await mgr.update(
           TripRequest,
           { id: link.tripRequest.id },
           { status: newStatus, statusUpdatedAt: new Date() },
         );
+        if (isBoarding) boardingRequestIds.push(link.tripRequest.id);
       }
 
-      return this.buildActiveState(trip);
+      return {
+        state: await this.buildActiveState(trip),
+        boardingRequestIds,
+      };
     });
+
+    // Notify boarding passengers that the driver has arrived at pickup
+    const boardingUserIds = await this.passengerUserIdsForRequests(
+      result.boardingRequestIds,
+    );
+    await this.emitPassengerNotifications({
+      userIds: boardingUserIds,
+      type: PassengerNotificationType.DRIVER_ARRIVED,
+      titleEn: 'Driver has arrived',
+      titleAr: 'السائق وصل',
+      bodyEn: 'Your driver is waiting at the pickup point.',
+      bodyAr: 'سائقك في انتظارك عند نقطة الإقلال.',
+      payload: { tripId: trip.id, stopId: stop.id },
+    });
+
+    return result.state;
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -422,8 +488,13 @@ export class DriverTripsService {
       'package',
     );
 
-    return this.dataSource.transaction(async (mgr) => {
+    const result = await this.dataSource.transaction(async (mgr) => {
       const now = new Date();
+      const pickedUpRequestIds: number[] = [];
+      const noShowRequestIds: number[] = [];
+      const collectedPackageIds: number[] = [];
+      const notFoundPackageIds: number[] = [];
+
       for (const link of boarding) {
         const isPicked = pickedSet.has(link.id);
         link.status = isPicked
@@ -439,6 +510,8 @@ export class DriverTripsService {
             statusUpdatedAt: now,
           },
         );
+        if (isPicked) pickedUpRequestIds.push(link.tripRequest.id);
+        else noShowRequestIds.push(link.tripRequest.id);
       }
       for (const link of collecting) {
         const collected = collectedSet.has(link.id);
@@ -454,6 +527,8 @@ export class DriverTripsService {
             status: collected ? PackageStatus.PICKED_UP : PackageStatus.CANCELLED,
           },
         );
+        if (collected) collectedPackageIds.push(link.packageDelivery.id);
+        else notFoundPackageIds.push(link.packageDelivery.id);
       }
 
       stop.status = DriverTripStopStatus.CONFIRMED;
@@ -469,8 +544,68 @@ export class DriverTripsService {
         await mgr.save(refreshedTrip);
       }
 
-      return this.buildActiveState(refreshedTrip ?? trip);
+      return {
+        state: await this.buildActiveState(refreshedTrip ?? trip),
+        pickedUpRequestIds,
+        noShowRequestIds,
+        collectedPackageIds,
+        notFoundPackageIds,
+      };
     });
+
+    // Notify each picked-up passenger that their trip is now in progress
+    const tripStartedUserIds = await this.passengerUserIdsForRequests(
+      result.pickedUpRequestIds,
+    );
+    await this.emitPassengerNotifications({
+      userIds: tripStartedUserIds,
+      type: PassengerNotificationType.TRIP_STARTED,
+      titleEn: 'Trip started',
+      titleAr: 'بدأت رحلتك',
+      bodyEn: "You're on your way to your destination.",
+      bodyAr: 'أنت الآن في طريقك إلى وجهتك.',
+      payload: { tripId: trip.id, stopId: stop.id },
+    });
+    // Cancellation notice for no-shows
+    const noShowUserIds = await this.passengerUserIdsForRequests(
+      result.noShowRequestIds,
+    );
+    await this.emitPassengerNotifications({
+      userIds: noShowUserIds,
+      type: PassengerNotificationType.TRIP_CANCELLED,
+      titleEn: 'Trip cancelled — no-show',
+      titleAr: 'تم إلغاء الرحلة — لم تتواجد',
+      bodyEn: 'The driver marked you as a no-show and your trip was cancelled.',
+      bodyAr: 'سجل السائق عدم تواجدك وتم إلغاء رحلتك.',
+      payload: { tripId: trip.id, stopId: stop.id },
+    });
+    // Package senders: collected vs not-found
+    const collectedSenderIds = await this.senderUserIdsForPackages(
+      result.collectedPackageIds,
+    );
+    await this.emitPassengerNotifications({
+      userIds: collectedSenderIds,
+      type: PassengerNotificationType.PACKAGE_PICKED_UP,
+      titleEn: 'Package picked up',
+      titleAr: 'تم استلام الطرد',
+      bodyEn: 'The driver has picked up your package.',
+      bodyAr: 'استلم السائق طردك وبدأ رحلة التوصيل.',
+      payload: { tripId: trip.id, stopId: stop.id },
+    });
+    const notFoundSenderIds = await this.senderUserIdsForPackages(
+      result.notFoundPackageIds,
+    );
+    await this.emitPassengerNotifications({
+      userIds: notFoundSenderIds,
+      type: PassengerNotificationType.PACKAGE_CANCELLED,
+      titleEn: 'Package not collected',
+      titleAr: 'لم يتم استلام الطرد',
+      bodyEn: 'The driver could not collect your package and the delivery was cancelled.',
+      bodyAr: 'تعذر على السائق استلام طردك وتم إلغاء الإرسال.',
+      payload: { tripId: trip.id, stopId: stop.id },
+    });
+
+    return result.state;
   }
 
   async confirmDropoff(
@@ -534,10 +669,13 @@ export class DriverTripsService {
       'package',
     );
 
-    return this.dataSource.transaction(async (mgr) => {
+    const result = await this.dataSource.transaction(async (mgr) => {
       const now = new Date();
       let cashAddedAtStop = 0;
       let cashAddedTotal = 0;
+      const droppedOffRequestIds: number[] = [];
+      const deliveredPackageIds: number[] = [];
+      const failedPackageIds: number[] = [];
 
       for (const link of alighting) {
         const entry = droppedEntries.find((e) => e.id === link.id)!;
@@ -558,6 +696,7 @@ export class DriverTripsService {
           { id: link.tripRequest.id },
           { status: TripStatus.COMPLETED, statusUpdatedAt: now },
         );
+        droppedOffRequestIds.push(link.tripRequest.id);
       }
 
       for (const link of delivering) {
@@ -571,6 +710,7 @@ export class DriverTripsService {
             { id: link.packageDelivery.id },
             { status: PackageStatus.DELIVERED },
           );
+          deliveredPackageIds.push(link.packageDelivery.id);
         } else {
           const failure = failures.find((f) => f.id === link.id)!;
           link.status = StopPackageStatus.DELIVERY_FAILED;
@@ -581,6 +721,7 @@ export class DriverTripsService {
             { id: link.packageDelivery.id },
             { status: PackageStatus.CANCELLED },
           );
+          failedPackageIds.push(link.packageDelivery.id);
         }
         link.confirmedAt = now;
         await mgr.save(link);
@@ -601,8 +742,54 @@ export class DriverTripsService {
       }
 
       void cashAddedAtStop;
-      return this.buildActiveState(refreshedTrip ?? trip);
+      return {
+        state: await this.buildActiveState(refreshedTrip ?? trip),
+        droppedOffRequestIds,
+        deliveredPackageIds,
+        failedPackageIds,
+      };
     });
+
+    // Notify passengers their trip is completed
+    const droppedOffUserIds = await this.passengerUserIdsForRequests(
+      result.droppedOffRequestIds,
+    );
+    await this.emitPassengerNotifications({
+      userIds: droppedOffUserIds,
+      type: PassengerNotificationType.TRIP_COMPLETED,
+      titleEn: 'Trip completed',
+      titleAr: 'اكتملت الرحلة',
+      bodyEn: "You've arrived at your destination. Thanks for riding with Sarfees!",
+      bodyAr: 'وصلت إلى وجهتك. شكرًا لاختيارك سرفيز!',
+      payload: { tripId: trip.id, stopId: stop.id },
+    });
+    // Notify package senders: delivered vs failed
+    const deliveredSenderIds = await this.senderUserIdsForPackages(
+      result.deliveredPackageIds,
+    );
+    await this.emitPassengerNotifications({
+      userIds: deliveredSenderIds,
+      type: PassengerNotificationType.PACKAGE_DELIVERED,
+      titleEn: 'Package delivered',
+      titleAr: 'تم تسليم الطرد',
+      bodyEn: 'Your package has been delivered to the recipient.',
+      bodyAr: 'تم تسليم طردك إلى المستلم.',
+      payload: { tripId: trip.id, stopId: stop.id },
+    });
+    const failedSenderIds = await this.senderUserIdsForPackages(
+      result.failedPackageIds,
+    );
+    await this.emitPassengerNotifications({
+      userIds: failedSenderIds,
+      type: PassengerNotificationType.PACKAGE_CANCELLED,
+      titleEn: 'Package delivery failed',
+      titleAr: 'فشل تسليم الطرد',
+      bodyEn: 'The driver was unable to deliver your package. Please contact support.',
+      bodyAr: 'تعذر على السائق تسليم طردك. يُرجى التواصل مع الدعم.',
+      payload: { tripId: trip.id, stopId: stop.id },
+    });
+
+    return result.state;
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -763,7 +950,10 @@ export class DriverTripsService {
       zone = 2;
     }
 
-    return this.dataSource.transaction(async (mgr) => {
+    const tripRequestIds = await this.collectLinkedTripRequestIds(trip.id);
+    const packageIds = await this.collectLinkedPackageIds(trip.id);
+
+    const txnResult = await this.dataSource.transaction(async (mgr) => {
       const now = new Date();
       trip.status = DriverTripStatus.CANCELLED;
       trip.cancelledAt = now;
@@ -774,7 +964,6 @@ export class DriverTripsService {
       await mgr.save(trip);
 
       // Sync linked passenger TripRequests to CANCELLED
-      const tripRequestIds = await this.collectLinkedTripRequestIds(trip.id);
       if (tripRequestIds.length) {
         await mgr
           .createQueryBuilder()
@@ -783,7 +972,6 @@ export class DriverTripsService {
           .whereInIds(tripRequestIds)
           .execute();
       }
-      const packageIds = await this.collectLinkedPackageIds(trip.id);
       if (packageIds.length) {
         await mgr
           .createQueryBuilder()
@@ -822,6 +1010,35 @@ export class DriverTripsService {
             : 'Trip cancelled mid-route. Soft penalty recorded on your reliability score.',
       };
     });
+
+    // Notify affected passengers + package senders that the trip was cancelled
+    const passengerUserIds =
+      await this.passengerUserIdsForRequests(tripRequestIds);
+    await this.emitPassengerNotifications({
+      userIds: passengerUserIds,
+      type: PassengerNotificationType.TRIP_CANCELLED,
+      titleEn: 'Trip cancelled',
+      titleAr: 'تم إلغاء الرحلة',
+      bodyEn:
+        'Your driver cancelled the trip. We will try to match you with another driver shortly.',
+      bodyAr:
+        'ألغى السائق رحلتك. سنحاول العثور على سائق آخر لك قريبًا.',
+      payload: { tripId: trip.id, zone },
+    });
+    const senderUserIds = await this.senderUserIdsForPackages(packageIds);
+    await this.emitPassengerNotifications({
+      userIds: senderUserIds,
+      type: PassengerNotificationType.PACKAGE_CANCELLED,
+      titleEn: 'Package delivery cancelled',
+      titleAr: 'تم إلغاء توصيل الطرد',
+      bodyEn:
+        'The driver cancelled the trip carrying your package. We will reassign it shortly.',
+      bodyAr:
+        'ألغى السائق الرحلة التي تحمل طردك. سنعيد تعيينه قريبًا.',
+      payload: { tripId: trip.id, zone },
+    });
+
+    return txnResult;
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -985,6 +1202,72 @@ export class DriverTripsService {
   // ═════════════════════════════════════════════════════════════
   // Helpers
   // ═════════════════════════════════════════════════════════════
+
+  // ═════════════════════════════════════════════════════════════
+  // Passenger notification helpers (best-effort, never throws)
+  // ═════════════════════════════════════════════════════════════
+
+  /**
+   * Fan-out emit to the passenger inbox. Failures are swallowed so a
+   * notification write error never aborts the parent lifecycle action.
+   */
+  private async emitPassengerNotifications(input: {
+    userIds: number[];
+    type: PassengerNotificationType;
+    titleEn: string;
+    titleAr: string;
+    bodyEn: string;
+    bodyAr: string;
+    payload?: Record<string, unknown>;
+  }): Promise<void> {
+    for (const userId of input.userIds) {
+      try {
+        await this.passengerNotifications.emit({
+          userId,
+          type: input.type,
+          titleEn: input.titleEn,
+          titleAr: input.titleAr,
+          bodyEn: input.bodyEn,
+          bodyAr: input.bodyAr,
+          payload: input.payload,
+        });
+      } catch (err) {
+        // Best-effort: don't break the parent action if a notification fails
+        console.warn(
+          `[passenger-notif] emit failed for user ${userId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+  }
+
+  /** Resolve passenger user IDs for a set of TripRequest IDs. */
+  private async passengerUserIdsForRequests(
+    requestIds: number[],
+  ): Promise<number[]> {
+    if (!requestIds.length) return [];
+    const rows = await this.tripRequestsRepo.find({
+      where: { id: In(requestIds) },
+      relations: ['passenger'],
+    });
+    return rows
+      .map((r) => r.passenger?.id)
+      .filter((id): id is number => typeof id === 'number');
+  }
+
+  /** Resolve sender user IDs for a set of PackageDelivery IDs. */
+  private async senderUserIdsForPackages(
+    packageIds: number[],
+  ): Promise<number[]> {
+    if (!packageIds.length) return [];
+    const rows = await this.packagesRepo.find({
+      where: { id: In(packageIds) },
+      relations: ['sender'],
+    });
+    return rows
+      .map((r) => r.sender?.id)
+      .filter((id): id is number => typeof id === 'number');
+  }
 
   private async requireDriver(driverId: number): Promise<Driver> {
     const driver = await this.driversRepo.findOne({
