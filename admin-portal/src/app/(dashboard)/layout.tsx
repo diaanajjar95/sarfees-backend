@@ -6,17 +6,24 @@ import {
   Inbox,
   DollarSign,
   Megaphone,
+  HelpCircle,
   LogOut,
 } from 'lucide-react';
 import { getCurrentAdmin, logoutAction } from '@/lib/auth';
 
-const NAV: { href: string; label: string; icon: typeof Users; disabled?: boolean }[] = [
+const NAV: {
+  href: string;
+  label: string;
+  icon: typeof Users;
+  disabled?: boolean;
+}[] = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/passenger-requests', label: 'Passenger requests', icon: Inbox },
   { href: '/drivers', label: 'Drivers', icon: Users },
   { href: '/trips', label: 'Trips', icon: Route },
   { href: '/earnings', label: 'Earnings', icon: DollarSign },
   { href: '/announcements', label: 'Announcements', icon: Megaphone },
+  { href: '/faq', label: 'FAQ', icon: HelpCircle },
 ];
 
 export default async function DashboardLayout({
@@ -35,11 +42,17 @@ export default async function DashboardLayout({
           borderRight: '1px solid var(--color-sarfees-border)',
         }}
       >
-        <div className="px-5 py-5" style={{ borderBottom: '1px solid var(--color-sarfees-border)' }}>
+        <div
+          className="px-5 py-5"
+          style={{ borderBottom: '1px solid var(--color-sarfees-border)' }}
+        >
           <div className="flex items-center gap-3">
             <div
               className="flex h-9 w-9 items-center justify-center rounded-lg text-lg font-extrabold"
-              style={{ backgroundColor: 'var(--color-sarfees-gold)', color: '#1A1A1A' }}
+              style={{
+                backgroundColor: 'var(--color-sarfees-gold)',
+                color: '#1A1A1A',
+              }}
             >
               S
             </div>
@@ -94,7 +107,10 @@ export default async function DashboardLayout({
             <div className="text-sm font-semibold">
               {admin.fullName ?? admin.email}
             </div>
-            <div className="text-xs" style={{ color: 'var(--color-sarfees-muted)' }}>
+            <div
+              className="text-xs"
+              style={{ color: 'var(--color-sarfees-muted)' }}
+            >
               {admin.role.replace('_', ' ')}
             </div>
             <form action={logoutAction} className="mt-3">
