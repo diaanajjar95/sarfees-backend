@@ -14,6 +14,7 @@ import { DriversModule } from './drivers/drivers.module';
 import { DriverAuthModule } from './auth/driver/driver-auth.module';
 import { DriverTripsModule } from './driver-trips/driver-trips.module';
 import { DriverNotificationsModule } from './notifications/driver-notifications.module';
+import { PassengerNotificationsModule } from './notifications/passenger/passenger-notifications.module';
 import { AdminsModule } from './admins/admins.module';
 import { AdminAuthModule } from './auth/admin/admin-auth.module';
 import { AdminDriversModule } from './admins/drivers/admin-drivers.module';
@@ -21,6 +22,7 @@ import { AdminTripsModule } from './admins/trips/admin-trips.module';
 import { AdminEarningsModule } from './admins/earnings/admin-earnings.module';
 import { AdminPassengerRequestsModule } from './admins/passenger-requests/admin-passenger-requests.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
+import { FaqModule } from './faq/faq.module';
 import * as path from 'path';
 @Module({
   imports: [
@@ -73,6 +75,7 @@ import * as path from 'path';
     DriverAuthModule,
     DriverTripsModule,
     DriverNotificationsModule,
+    PassengerNotificationsModule,
     AdminsModule,
     AdminAuthModule,
     AdminDriversModule,
@@ -80,6 +83,7 @@ import * as path from 'path';
     AdminEarningsModule,
     AdminPassengerRequestsModule,
     AnnouncementsModule,
+    FaqModule,
   ],
   controllers: [AppController],
   providers: [AppService],

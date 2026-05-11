@@ -1,0 +1,17 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { PassportModule } from '@nestjs/passport';
+import { PassengerNotification } from './passenger-notification.entity';
+import { PassengerNotificationsService } from './passenger-notifications.service';
+import { PassengerNotificationsController } from './passenger-notifications.controller';
+
+@Module({
+  imports: [
+    TypeOrmModule.forFeature([PassengerNotification]),
+    PassportModule,
+  ],
+  controllers: [PassengerNotificationsController],
+  providers: [PassengerNotificationsService],
+  exports: [PassengerNotificationsService],
+})
+export class PassengerNotificationsModule {}
