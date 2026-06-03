@@ -5,7 +5,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import {
+  Between,
+  DataSource,
+  FindOptionsWhere,
+  In,
+  LessThanOrEqual,
+  MoreThanOrEqual,
+  Repository,
+} from 'typeorm';
 import { I18nContext } from 'nestjs-i18n';
 import { DriverTrip } from './entities/driver-trip.entity';
 import { DriverTripStop } from './entities/driver-trip-stop.entity';
@@ -45,6 +53,11 @@ import {
 import { ActiveStateResponseDto } from './dto/active-state.dto';
 import { TripCompletionResponseDto } from './dto/trip-completion.dto';
 import { CancelTripDto, CancelTripResponseDto } from './dto/cancel-trip.dto';
+import {
+  TripHistoryItemDto,
+  TripHistoryQueryDto,
+  TripHistoryResponseDto,
+} from './dto/trip-history.dto';
 import { DriverNotificationsService } from '../notifications/driver-notifications.service';
 import { DriverNotificationType } from '../shared/enums/driver-notification-type.enum';
 import { PassengerNotificationsService } from '../notifications/passenger/passenger-notifications.service';
@@ -324,6 +337,76 @@ export class DriverTripsService {
     });
 
     return manifest;
+  }
+
+  /**
+   * Paginated history of a driver's past trips. By default returns only
+   * terminal statuses (COMPLETED, CANCELLED, EXPIRED, DECLINED) so the
+   * mobile "My Trips" list never mixes current work with history.
+   */
+  async getHistory(
+    driverId: number,
+    query: TripHistoryQueryDto,
+  ): Promise<TripHistoryResponseDto> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const skip = (page - 1) * limit;
+
+    const statuses =
+      query.status && query.status.length > 0
+        ? query.status
+        : [
+            DriverTripStatus.COMPLETED,
+            DriverTripStatus.CANCELLED,
+            DriverTripStatus.EXPIRED,
+            DriverTripStatus.DECLINED,
+          ];
+
+    const where: FindOptionsWhere<DriverTrip> = {
+      driver: { id: driverId },
+      status: In(statuses),
+    };
+    if (query.from && query.to) {
+      where.departureTime = Between(new Date(query.from), new Date(query.to));
+    } else if (query.from) {
+      where.departureTime = MoreThanOrEqual(new Date(query.from));
+    } else if (query.to) {
+      where.departureTime = LessThanOrEqual(new Date(query.to));
+    }
+
+    const [rows, totalItems] = await this.tripsRepo.findAndCount({
+      where,
+      order: { departureTime: 'DESC', id: 'DESC' },
+      skip,
+      take: limit,
+    });
+    const totalPages = Math.max(1, Math.ceil(totalItems / limit));
+
+    const data: TripHistoryItemDto[] = rows.map((t) => ({
+      id: t.id,
+      status: t.status,
+      type: t.type,
+      originCity: t.originCity,
+      destinationCity: t.destinationCity,
+      departureTime: t.departureTime,
+      netEarnings: t.netEarnings != null ? Number(t.netEarnings) : null,
+      totalCashCollected: Number(t.totalCashCollected),
+      acceptedAt: t.acceptedAt ?? null,
+      startedAt: t.startedAt ?? null,
+      completedAt: t.completedAt ?? null,
+      cancelledAt: t.cancelledAt ?? null,
+      cancellationZone: t.cancellationZone ?? null,
+    }));
+
+    return {
+      data,
+      page,
+      limit,
+      totalItems,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPreviousPage: page > 1,
+    };
   }
 
   async getActiveTrip(driverId: number): Promise<ActiveStateResponseDto> {

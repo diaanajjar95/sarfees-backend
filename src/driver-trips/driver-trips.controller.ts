@@ -7,6 +7,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -28,6 +29,10 @@ import { ManifestResponseDto } from './dto/manifest.dto';
 import { ActiveStateResponseDto } from './dto/active-state.dto';
 import { TripCompletionResponseDto } from './dto/trip-completion.dto';
 import { CancelTripDto, CancelTripResponseDto } from './dto/cancel-trip.dto';
+import {
+  TripHistoryQueryDto,
+  TripHistoryResponseDto,
+} from './dto/trip-history.dto';
 
 @ApiTags('Driver Trips')
 @ApiBearerAuth()
@@ -45,6 +50,24 @@ export class DriverTripsController {
   @Get('active')
   getActiveTrip(@Req() req: Request) {
     return this.tripsService.getActiveTrip(this.driverId(req));
+  }
+
+  // ─── My Trips — history ────────────────────────────────────
+  @ApiOperation({
+    summary: "List the driver's past trips (My Trips screen)",
+    description:
+      'Paginated, sorted by `departureTime` DESC. Defaults to terminal ' +
+      'statuses only (completed / cancelled / expired / declined) so ' +
+      'ongoing work never shows up. Override via repeating `?status=` query ' +
+      'parameters. Date range filters operate on `departureTime`.',
+  })
+  @ApiResponse({ status: 200, type: TripHistoryResponseDto })
+  @Get('history')
+  getHistory(
+    @Req() req: Request,
+    @Query() query: TripHistoryQueryDto,
+  ): Promise<TripHistoryResponseDto> {
+    return this.tripsService.getHistory(this.driverId(req), query);
   }
 
   // ─── S-07 Incoming Offer ───────────────────────────────────
