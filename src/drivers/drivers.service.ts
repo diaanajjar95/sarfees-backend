@@ -11,11 +11,16 @@ import { Driver } from './driver.entity';
 import { DriverStatus } from '../shared/enums/driver-status.enum';
 import { DriverTrip } from '../driver-trips/entities/driver-trip.entity';
 import { DriverTripStatus } from '../shared/enums/driver-trip-status.enum';
+import { DriverLocation } from '../trips/entities/driver-location.entity';
 import { ActivatePreferencesDto } from './dto/activate-preferences.dto';
 import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { DriverProfileResponseDto } from './dto/driver-profile-response.dto';
 import { HomeSummaryResponseDto } from './dto/home-summary-response.dto';
+import {
+  LocationPingDto,
+  LocationPingResponseDto,
+} from './dto/location-ping.dto';
 import { AnnouncementsService } from '../announcements/announcements.service';
 
 @Injectable()
@@ -25,6 +30,8 @@ export class DriversService {
     private readonly driversRepository: Repository<Driver>,
     @InjectRepository(DriverTrip)
     private readonly driverTripsRepository: Repository<DriverTrip>,
+    @InjectRepository(DriverLocation)
+    private readonly driverLocationRepository: Repository<DriverLocation>,
     private readonly announcementsService: AnnouncementsService,
   ) {}
 
@@ -116,7 +123,10 @@ export class DriversService {
       ? this.requireHomeCity(driver)
       : (dto.destinationCity ?? null);
 
-    const updated = await this.update(driver.id, {
+    // Location is optional on activate — drivers can also seed it via
+    // POST /drivers/me/location before going active. When omitted, the
+    // existing prefLocation* values (if any) are preserved.
+    const patch: Partial<Driver> = {
       status: DriverStatus.ACTIVE,
       prefDestinationCity: destinationCity as unknown as string,
       prefTripTypes: dto.tripTypes,
@@ -126,9 +136,14 @@ export class DriversService {
           ? dto.minPassengers
           : (null as unknown as number),
       prefActivatedAt: new Date(),
-      prefLocationLat: dto.currentLocationLat,
-      prefLocationLng: dto.currentLocationLng,
-    });
+    };
+    if (dto.currentLocationLat != null) {
+      patch.prefLocationLat = dto.currentLocationLat;
+    }
+    if (dto.currentLocationLng != null) {
+      patch.prefLocationLng = dto.currentLocationLng;
+    }
+    const updated = await this.update(driver.id, patch);
 
     return DriverProfileResponseDto.from(updated as Driver);
   }
@@ -221,6 +236,47 @@ export class DriversService {
       ? await this.update(driver.id, patch)
       : driver;
     return DriverProfileResponseDto.from(updated as Driver);
+  }
+
+  // ─── Location ping (high-frequency, trip-agnostic) ─────────
+  /**
+   * Record a single GPS ping. Two side-effects:
+   *   - Append a row to `driver_locations` (history).
+   *   - Update `Driver.prefLocationLat/Lng` so the auto-matcher always
+   *     reads the latest position without a join.
+   *
+   * Suspended drivers get 403 (same gate as everything else). Stale
+   * pings from drivers whose status is not ACTIVE / ON_TRIP are still
+   * accepted — clients may need to write the *initial* position before
+   * calling /drivers/activate, and the history table is also useful
+   * after a trip completes.
+   */
+  async pingLocation(
+    driverId: number,
+    dto: LocationPingDto,
+  ): Promise<LocationPingResponseDto> {
+    const driver = await this.requireDriver(driverId);
+
+    const row = this.driverLocationRepository.create({
+      driver: { id: driver.id } as Driver,
+      trip: null,
+      lat: dto.lat,
+      lng: dto.lng,
+      heading: dto.heading ?? (null as unknown as number),
+      speed: dto.speed ?? (null as unknown as number),
+      accuracy: dto.accuracy ?? (null as unknown as number),
+    });
+    const saved = await this.driverLocationRepository.save(row);
+
+    // Update the matcher snapshot. Cast through unknown because TypeORM
+    // partial updates treat decimal columns as strings; numbers are
+    // fine at the driver — the column transformer handles conversion.
+    await this.driversRepository.update(driver.id, {
+      prefLocationLat: dto.lat as unknown as number,
+      prefLocationLng: dto.lng as unknown as number,
+    });
+
+    return { id: saved.id, recordedAt: saved.recordedAt };
   }
 
   // ─── Helpers ───────────────────────────────────────────────

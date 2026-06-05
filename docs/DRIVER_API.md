@@ -98,8 +98,8 @@ trips to this driver):
   "goingHome": false,
   "tripTypes": ["shared", "women_only"],
   "minPassengers": 2,                  // optional
-  "currentLocationLat": 31.95,
-  "currentLocationLng": 35.91
+  "currentLocationLat": 31.95,         // optional — see below
+  "currentLocationLng": 35.91          // optional — see below
 }
 ```
 
@@ -110,6 +110,12 @@ Returns the updated profile. Validates:
   male drivers (gender-aware safety gate).
 - 400 if the driver is currently `ON_TRIP` (finish the trip first).
 
+**Location handling on activate:** `currentLocationLat/Lng` are
+**optional**. If you provide them, they seed the matcher snapshot in
+the same call. If you omit them, you should call
+`POST /drivers/me/location` (see § 3a) before or after activate —
+otherwise the matcher has no idea where the driver is.
+
 ### `POST /drivers/deactivate`
 
 Wipes session prefs and sets status back to `INACTIVE`.
@@ -118,6 +124,45 @@ Wipes session prefs and sets status back to `INACTIVE`.
 
 Mid-session edit (e.g. change destination while still active). Partial
 body; only set the fields you're changing.
+
+**Note:** This endpoint does **not** accept location updates — the
+location ping is a separate high-frequency endpoint (§ 3a) so the
+matcher snapshot can be refreshed every few seconds without paying
+the preference-validation cost on every GPS tick.
+
+### 3a. `POST /drivers/me/location` — high-frequency GPS ping
+
+Records the driver's current position. Recommended cadence:
+**every 5–10 seconds while the driver is active**, paused when inactive.
+
+```json
+{
+  "lat": 31.9539,
+  "lng": 35.9106,
+  "heading": 124.5,       // optional, 0–360 degrees
+  "speed": 18.4,          // optional, m/s
+  "accuracy": 8.5         // optional, meters
+}
+```
+
+Returns:
+
+```json
+{ "id": 12345, "recordedAt": "2026-06-06T14:32:11.214Z" }
+```
+
+Side effects:
+
+- Appends a row to `driver_locations` (history — used by passenger
+  "where is my driver?" view + analytics).
+- Updates `Driver.prefLocationLat/Lng` (the matcher snapshot — always
+  the latest position, no join needed).
+
+Intentionally fire-and-forget — the response body is minimal so the
+client can keep pinging without blocking on the previous reply. The
+endpoint accepts pings even when the driver isn't `ACTIVE` (so clients
+can preload the initial position before calling `activate`), but a
+`SUSPENDED` driver gets 403.
 
 ### `PATCH /drivers/settings`
 
