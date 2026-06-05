@@ -59,15 +59,27 @@ export class ActivatePreferencesDto {
   @Max(3)
   minPassengers?: number;
 
-  @ApiProperty({ example: 31.9539 })
+  @ApiPropertyOptional({
+    example: 31.9539,
+    description:
+      'Optional. If omitted, the driver app should call ' +
+      '`POST /drivers/me/location` first so the matcher has a position. ' +
+      'When provided here, it seeds the matcher snapshot in the same call ' +
+      '(but does not append to driver_locations — use the ping endpoint for that).',
+  })
+  @IsOptional()
   @IsNumber()
   @Min(-90)
   @Max(90)
-  currentLocationLat: number;
+  currentLocationLat?: number;
 
-  @ApiProperty({ example: 35.9106 })
+  @ApiPropertyOptional({
+    example: 35.9106,
+    description: 'Optional. Paired with `currentLocationLat`.',
+  })
+  @IsOptional()
   @IsNumber()
   @Min(-180)
   @Max(180)
-  currentLocationLng: number;
+  currentLocationLng?: number;
 }

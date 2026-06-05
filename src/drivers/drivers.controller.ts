@@ -34,6 +34,10 @@ import {
   EarningsQueryDto,
   EarningsResponseDto,
 } from './dto/earnings.dto';
+import {
+  LocationPingDto,
+  LocationPingResponseDto,
+} from './dto/location-ping.dto';
 
 @ApiTags('Drivers')
 @ApiBearerAuth()
@@ -110,6 +114,25 @@ export class DriversController {
     @Body() dto: UpdateSettingsDto,
   ): Promise<DriverProfileResponseDto> {
     return this.driversService.updateSettings(this.driverId(req), dto);
+  }
+
+  // ─── Location ping (high-frequency) ────────────────────────
+  @ApiOperation({
+    summary: "Report the driver's current GPS location",
+    description:
+      'High-frequency endpoint for continuous location reporting while the ' +
+      'driver is active. Side effects: appends a row to `driver_locations` ' +
+      '(history) and updates the matcher snapshot on the driver row. ' +
+      'Suspended drivers get 403. Recommended cadence: every 5–10 seconds.',
+  })
+  @ApiResponse({ status: 200, type: LocationPingResponseDto })
+  @HttpCode(HttpStatus.OK)
+  @Post('me/location')
+  pingLocation(
+    @Req() req: Request,
+    @Body() dto: LocationPingDto,
+  ): Promise<LocationPingResponseDto> {
+    return this.driversService.pingLocation(this.driverId(req), dto);
   }
 
   // ─── S-15 Earnings ─────────────────────────────────────────
