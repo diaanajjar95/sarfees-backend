@@ -12,7 +12,9 @@ import {
   In,
   LessThanOrEqual,
   MoreThanOrEqual,
+  ObjectLiteral,
   Repository,
+  SelectQueryBuilder,
 } from 'typeorm';
 import { I18nContext } from 'nestjs-i18n';
 import { DriverTrip } from './entities/driver-trip.entity';
@@ -382,6 +384,26 @@ export class DriverTripsService {
     });
     const totalPages = Math.max(1, Math.ceil(totalItems / limit));
 
+    // Fetch boarding-passenger and collecting-package counts for the
+    // returned page in one round-trip each (avoids N+1).
+    const tripIds = rows.map((t) => t.id);
+    const passengerCountByTrip = await this.countByTrip(
+      this.stopPassengersRepo
+        .createQueryBuilder('sp')
+        .innerJoin('sp.stop', 'stop')
+        .where('stop.tripId IN (:...tripIds)', { tripIds })
+        .andWhere('sp.role = :role', { role: StopPassengerRole.BOARDING }),
+      tripIds,
+    );
+    const packageCountByTrip = await this.countByTrip(
+      this.stopPackagesRepo
+        .createQueryBuilder('sp')
+        .innerJoin('sp.stop', 'stop')
+        .where('stop.tripId IN (:...tripIds)', { tripIds })
+        .andWhere('sp.role = :role', { role: StopPackageRole.COLLECTING }),
+      tripIds,
+    );
+
     const data: TripHistoryItemDto[] = rows.map((t) => ({
       id: t.id,
       status: t.status,
@@ -389,6 +411,8 @@ export class DriverTripsService {
       originCity: t.originCity,
       destinationCity: t.destinationCity,
       departureTime: t.departureTime,
+      passengerCount: passengerCountByTrip.get(t.id) ?? 0,
+      packageCount: packageCountByTrip.get(t.id) ?? 0,
       netEarnings: t.netEarnings != null ? Number(t.netEarnings) : null,
       totalCashCollected: Number(t.totalCashCollected),
       acceptedAt: t.acceptedAt ?? null,
@@ -1350,6 +1374,29 @@ export class DriverTripsService {
     return rows
       .map((r) => r.sender?.id)
       .filter((id): id is number => typeof id === 'number');
+  }
+
+  /**
+   * Run an aggregation query already scoped to a set of trip IDs and
+   * return a `tripId → count` map. Used by the history endpoint to
+   * batch passenger + package counts across the returned page (avoids
+   * N+1 lookups on `/drivers/trips/history`).
+   */
+  private async countByTrip<T extends ObjectLiteral>(
+    qb: SelectQueryBuilder<T>,
+    tripIds: number[],
+  ): Promise<Map<number, number>> {
+    const result = new Map<number, number>();
+    if (!tripIds.length) return result;
+    const rows = await qb
+      .select('stop.tripId', 'tripId')
+      .addSelect('COUNT(*)', 'count')
+      .groupBy('stop.tripId')
+      .getRawMany<{ tripId: string | number; count: string }>();
+    for (const row of rows) {
+      result.set(Number(row.tripId), Number(row.count));
+    }
+    return result;
   }
 
   private async requireDriver(driverId: number): Promise<Driver> {
