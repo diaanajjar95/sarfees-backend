@@ -397,10 +397,9 @@ show the "Expires in 18 days" / "Expired 5 days ago" caption directly.
 
 Fetch one document — same shape as the list items.
 
-### `DELETE /drivers/me/documents/:id`
-
-Removes the row + the file on disk. Driver can re-upload that slot via
-the POST.
+> Documents cannot be deleted by the driver. Drivers replace a slot by
+> POSTing a new file of the same `type`; that path deletes the prior
+> row + file server-side. Hard delete is admin-only (separate flow).
 
 ### File URLs
 

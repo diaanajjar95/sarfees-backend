@@ -2,10 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
-  Delete,
   Get,
-  HttpCode,
-  HttpStatus,
   Param,
   ParseIntPipe,
   Post,
@@ -140,17 +137,6 @@ export class DriverDocumentsController {
     @Param('id', ParseIntPipe) id: number,
   ): Promise<DriverDocumentDto> {
     return this.service.getOne(this.driverId(req), id);
-  }
-
-  @ApiOperation({ summary: 'Delete a document' })
-  @ApiResponse({ status: 200, description: 'Deleted' })
-  @HttpCode(HttpStatus.OK)
-  @Delete(':id')
-  remove(
-    @Req() req: Request,
-    @Param('id', ParseIntPipe) id: number,
-  ): Promise<{ id: number }> {
-    return this.service.remove(this.driverId(req), id);
   }
 
   private driverId(req: Request): number {

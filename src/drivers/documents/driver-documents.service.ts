@@ -106,16 +106,6 @@ export class DriverDocumentsService {
     return this.toDto(row);
   }
 
-  async remove(driverId: number, documentId: number): Promise<{ id: number }> {
-    const row = await this.repo.findOne({
-      where: { id: documentId, driver: { id: driverId } },
-    });
-    if (!row) throw new NotFoundException('Document not found');
-    this.removeFile(row.fileUrl);
-    await this.repo.remove(row);
-    return { id: documentId };
-  }
-
   // ─── internals ──────────────────────────────────────────────
 
   private toDto(row: DriverDocument): DriverDocumentDto {
