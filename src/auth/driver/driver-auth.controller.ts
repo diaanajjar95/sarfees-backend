@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Get,
   HttpCode,
   HttpStatus,
   Post,
@@ -56,20 +55,6 @@ export class DriverAuthController {
 
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Verify the current driver session',
-    description:
-      'Validates the access token and returns the driver profile. Used by the splash screen (S-01) to decide whether to route to Login or Home.',
-  })
-  @ApiResponse({ status: 200, description: 'Session is valid' })
-  @UseGuards(AuthGuard('jwt-driver'))
-  @Get('verify-session')
-  async verifySession(@Req() req: Request) {
-    const driverId = req.user ? (req.user as { driverId: number }).driverId : 0;
-    return this.driverAuthService.verifySession(driverId);
-  }
-
-  @ApiBearerAuth()
-  @ApiOperation({
     summary: 'Refresh driver access token',
     description: 'Pass the refresh token as the Bearer token.',
   })
@@ -83,20 +68,5 @@ export class DriverAuthController {
       ? (req.user as { refreshToken: string }).refreshToken
       : '';
     return this.driverAuthService.refreshTokens(driverId, refreshToken);
-  }
-
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Logout driver',
-    description:
-      'Invalidates the refresh token server-side. The currently-issued access token remains valid until its 15-minute TTL expires.',
-  })
-  @ApiResponse({ status: 200, description: 'Logged out successfully' })
-  @UseGuards(AuthGuard('jwt-driver'))
-  @HttpCode(HttpStatus.OK)
-  @Post('logout')
-  async logout(@Req() req: Request) {
-    const driverId = req.user ? (req.user as { driverId: number }).driverId : 0;
-    return this.driverAuthService.logout(driverId);
   }
 }
