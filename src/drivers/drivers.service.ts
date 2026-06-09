@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { I18nContext } from 'nestjs-i18n';
 import { Driver } from './driver.entity';
 import { DriverStatus } from '../shared/enums/driver-status.enum';
@@ -62,22 +62,41 @@ export class DriversService {
   async getHomeSummary(driverId: number): Promise<HomeSummaryResponseDto> {
     const driver = await this.requireDriver(driverId);
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayTrips = await this.driverTripsRepository.find({
-      where: {
-        driver: { id: driverId },
+    // "Today" is evaluated in the Postgres session TZ — comparing
+    // `DATE(t.completedAt)` against `CURRENT_DATE` keeps both sides on the
+    // same clock. The previous JS `new Date()` approach silently missed
+    // today's trips on hosts whose process TZ differed from the DB TZ.
+    const todayTrips = await this.driverTripsRepository
+      .createQueryBuilder('t')
+      .where('t.driverId = :driverId', { driverId })
+      .andWhere('t.status = :status', {
         status: DriverTripStatus.COMPLETED,
-        completedAt: Between(todayStart, new Date()),
-      },
-    });
+      })
+      .andWhere('DATE(t."completedAt") = CURRENT_DATE')
+      .getMany();
+
+    // Aggregate today's totals — earnings, count, effective commission rate.
     const todayEarnings =
       Math.round(
-        todayTrips.reduce(
-          (n, t) => n + (Number(t.netEarnings) || 0),
-          0,
-        ) * 100,
+        todayTrips.reduce((n, t) => n + (Number(t.netEarnings) || 0), 0) * 100,
       ) / 100;
+    const tripsCompletedToday = todayTrips.length;
+    const totalCashToday = todayTrips.reduce(
+      (n, t) => n + (Number(t.totalCashCollected) || 0),
+      0,
+    );
+    const totalCommissionToday = todayTrips.reduce(
+      (n, t) =>
+        n +
+        (Number(t.totalCashCollected) || 0) * (Number(t.commissionRate) || 0),
+      0,
+    );
+    // Effective commission % across today's cash. Falls back to the platform
+    // default (15%) on a fresh day with no completed trips yet.
+    const commissionPercentageToday =
+      totalCashToday > 0
+        ? Math.round((totalCommissionToday / totalCashToday) * 1000) / 10
+        : 15;
 
     const lastCompleted = await this.driverTripsRepository.findOne({
       where: {
@@ -89,8 +108,36 @@ export class DriversService {
 
     const announcements = await this.announcementsService.listActive();
 
+    // Live session state — preferences + start time are only meaningful while
+    // the driver is in an `active` / `on_trip` state. Surface `null` otherwise.
+    const inSession =
+      driver.status === DriverStatus.ACTIVE ||
+      driver.status === DriverStatus.ON_TRIP;
+    const activePreferences = inSession
+      ? {
+          destinationCity: driver.prefDestinationCity ?? null,
+          tripTypes: driver.prefTripTypes ?? [],
+          goingHome: driver.prefGoingHome,
+          minPassengers: driver.prefMinPassengers ?? null,
+          activatedAt: driver.prefActivatedAt ?? null,
+          locationLat:
+            driver.prefLocationLat != null
+              ? Number(driver.prefLocationLat)
+              : null,
+          locationLng:
+            driver.prefLocationLng != null
+              ? Number(driver.prefLocationLng)
+              : null,
+        }
+      : null;
+
     return {
+      status: driver.status,
+      activePreferences,
+      sessionStartedAt: inSession ? (driver.prefActivatedAt ?? null) : null,
       todayEarnings,
+      tripsCompletedToday,
+      commissionPercentageToday,
       lastTrip: lastCompleted
         ? {
             origin: lastCompleted.originCity,

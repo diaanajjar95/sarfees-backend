@@ -93,18 +93,37 @@ Backs the Profile screen and the Home header.
 
 ### `GET /drivers/home-summary`
 
-Returns:
+One-shot call that paints the entire Home tab. Mixes **live session
+state** (status, current preferences, when the session started) with
+**today's rollups** (earnings, trip count, effective commission %) and
+the **persistent** carousel + balance.
 
 ```ts
 {
-  todayEarnings: number,                   // sum of netEarnings for today
+  // Live session
+  status: 'inactive' | 'active' | 'on_trip' | 'suspended',
+  activePreferences: {
+    destinationCity, tripTypes, goingHome, minPassengers,
+    activatedAt, locationLat, locationLng
+  } | null,                                // null when status=inactive
+  sessionStartedAt: Date | null,           // = activePreferences.activatedAt
+
+  // Today (calendar day, Postgres-evaluated)
+  todayEarnings: number,                   // sum of netEarnings
+  tripsCompletedToday: number,             // count of trips completed today
+  commissionPercentageToday: number,       // (SUM commission / SUM cash) × 100
+                                            // falls back to 15 if no trips today
+
+  // Persistent
   lastTrip: { origin, destination, completedAt, earnings } | null,
   outstandingBalance: number,              // platform commission owed
   announcements: AnnouncementCarouselItem[]
 }
 ```
 
-One-shot call to build the entire Home tab in S-04.
+The mobile app should call this on every Home tab open + after each
+trip completes — those are the moments when one of the live or
+today-rollup fields might have changed.
 
 ---
 
