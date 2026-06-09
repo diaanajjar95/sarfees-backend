@@ -11,6 +11,7 @@ import { CitiesModule } from './cities/cities.module';
 import { PackagesModule } from './packages/packages.module';
 import { AppConfigModule } from './app-config/app-config.module';
 import { DriversModule } from './drivers/drivers.module';
+import { DriverDocumentsModule } from './drivers/documents/driver-documents.module';
 import { DriverAuthModule } from './auth/driver/driver-auth.module';
 import { DriverTripsModule } from './driver-trips/driver-trips.module';
 import { DriverNotificationsModule } from './notifications/driver-notifications.module';
@@ -72,6 +73,7 @@ import * as path from 'path';
     PackagesModule,
     AppConfigModule,
     DriversModule,
+    DriverDocumentsModule,
     DriverAuthModule,
     DriverTripsModule,
     DriverNotificationsModule,
