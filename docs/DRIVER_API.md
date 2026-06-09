@@ -327,6 +327,91 @@ unless cancelled).
 
 ---
 
+## 5a. Compliance documents
+
+The Documents screen surfaces four required document slots:
+`driving_license`, `vehicle_registration`, `insurance_certificate`,
+`national_id`. Drivers upload one of each; ops verifies in the admin
+portal. The mobile UI shows a colour-coded badge per card
+(`verified` / `expiring_soon` / `pending_review` / `rejected` /
+`expired`), and the yellow "N documents need attention" banner at the
+top of the screen is driven by `summary.needsAttentionCount`.
+
+### `POST /drivers/me/documents`
+
+Multipart upload. Send the file under the `file` form field. Accepts
+JPG / PNG / WebP / HEIC / PDF up to 10 MB.
+
+```
+Content-Type: multipart/form-data
+
+file:            <binary>
+type:            driving_license | vehicle_registration | insurance_certificate | national_id
+documentNumber:  9123454821          (optional, ≤60 chars)
+issuedAt:        2022-03-15          (optional, ISO date)
+expiresAt:       2027-03-15          (optional, ISO date — omit for "No expiry" e.g. National ID)
+```
+
+Side effects:
+
+- The previous document of the same `type` (if any) is **deleted from
+  the DB and disk** — the table holds at most one document per
+  (driver, type) pair.
+- Fresh uploads land as `status: pending_review`. Admin flips to
+  `verified` or `rejected` in the portal.
+
+Returns the new `DriverDocumentDto`.
+
+### `GET /drivers/me/documents`
+
+Lists every document the driver has uploaded plus a summary block:
+
+```ts
+{
+  data: DriverDocumentDto[],
+  summary: {
+    needsAttentionCount: number,   // documents not in displayStatus=verified
+    lastReviewedAt: Date | null,   // max(reviewedAt) across all docs
+    expectedTypeCount: 4,           // hard-coded — # of slots the UI shows
+    uploadedTypeCount: number       // # of distinct types the driver has filled
+  }
+}
+```
+
+`DriverDocumentDto` includes a pre-computed **`displayStatus`** the
+client renders directly (no date math on the mobile side):
+
+| `status` | `daysUntilExpiry` | → `displayStatus` |
+| --- | --- | --- |
+| `verified` | `> 30` | `verified` |
+| `verified` | `0..30` | `expiring_soon` |
+| `verified` | `< 0` | `expired` |
+| `verified` | `null` (no expiry) | `verified` |
+| `pending_review` | any | `pending_review` |
+| `rejected` | any | `rejected` |
+
+Also returns `daysUntilExpiry` (signed integer or `null`) so the UI can
+show the "Expires in 18 days" / "Expired 5 days ago" caption directly.
+
+### `GET /drivers/me/documents/:id`
+
+Fetch one document — same shape as the list items.
+
+### `DELETE /drivers/me/documents/:id`
+
+Removes the row + the file on disk. Driver can re-upload that slot via
+the POST.
+
+### File URLs
+
+`fileUrl` is a path like `/uploads/driver-documents/<file>` served by
+the same static-assets middleware that hosts passenger profile photos.
+On Render's free tier the disk is **ephemeral** — files survive within
+one container but a redeploy wipes them. We'll swap to S3 before this
+goes to actual production.
+
+---
+
 ## 6. Earnings (S-15)
 
 ### `GET /drivers/earnings`

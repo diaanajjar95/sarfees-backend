@@ -1,6 +1,8 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { I18nValidationExceptionFilter, I18nValidationPipe } from 'nestjs-i18n';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { ResponseInterceptor } from './shared/interceptors/response.interceptor';
 import { AllExceptionsFilter } from './shared/filters/http-exception.filter';
@@ -10,7 +12,13 @@ import {
 } from './shared/swagger/audience-filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Serve uploaded files (driver documents, passenger profile photos, etc.)
+  // straight from disk under `/uploads/*`. Render's free-tier filesystem is
+  // ephemeral — files survive within one container but a redeploy wipes them.
+  // Acceptable for staging; swap for S3 before relying on this in production.
+  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
 
   // Admin portal lives on its own origin in dev and (typically) in prod.
   // ADMIN_PORTAL_ORIGIN can be a comma-separated list to allow multiple deploys.
