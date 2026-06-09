@@ -66,6 +66,14 @@ export class TripHistoryItemDto {
   @ApiProperty() originCity: string;
   @ApiProperty() destinationCity: string;
   @ApiProperty() departureTime: Date;
+  @ApiProperty({
+    description: 'Boarding passengers across all stops on this trip.',
+  })
+  passengerCount: number;
+  @ApiProperty({
+    description: 'Collecting packages across all stops on this trip.',
+  })
+  packageCount: number;
   @ApiProperty({ type: 'number', nullable: true }) netEarnings: number | null;
   @ApiProperty() totalCashCollected: number;
   @ApiProperty({ type: 'string', format: 'date-time', nullable: true })
