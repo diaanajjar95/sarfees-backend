@@ -158,23 +158,7 @@ export class DriverAuthService {
     };
   }
 
-  // 3. Verify session — used by splash screen (S-01) to validate stored access token
-  async verifySession(driverId: number) {
-    const driver = await this.driversService.findById(driverId);
-    if (!driver) {
-      throw new UnauthorizedException(
-        I18nContext.current()?.t('driver-auth.Not registered'),
-      );
-    }
-    if (driver.status === DriverStatus.SUSPENDED) {
-      throw new ForbiddenException(
-        I18nContext.current()?.t('driver-auth.Account suspended'),
-      );
-    }
-    return { driver: DriverResponseDto.from(driver) };
-  }
-
-  // 4. Refresh tokens
+  // 3. Refresh tokens
   async refreshTokens(driverId: number, refreshToken: string) {
     const driver = await this.driversService.findById(driverId);
     if (!driver || !driver.refreshToken) {
@@ -193,14 +177,6 @@ export class DriverAuthService {
     const tokens = await this.getTokens(driver);
     await this.persistRefreshToken(driver.id, tokens.refreshToken);
     return tokens;
-  }
-
-  // 5. Logout
-  async logout(driverId: number) {
-    await this.driversService.update(driverId, {
-      refreshToken: null as unknown as string,
-    });
-    return { message: 'Logged out successfully' };
   }
 
   private async getTokens(driver: Driver) {

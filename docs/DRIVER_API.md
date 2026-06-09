@@ -37,15 +37,30 @@ Ops pre-registers drivers in the backend; unknown phones get a 403.
 { "phoneNumber": "7799999001", "countryCode": "+962", "otp": "1234" }
 ```
 
-Returns `accessToken` (15 min), `refreshToken` (7 days), and a compact
-driver profile. **Persist both tokens.** 3 wrong attempts lock the
-account for 10 min (403).
+Returns `accessToken` (15 min), `refreshToken` (7 days), and the
+**persistent driver profile** — designed to be cached on the device
+after login so the home screen can render identity + vehicle + lifetime
+stats without an extra round trip.
 
-### `GET /auth/driver/verify-session`
+```ts
+{
+  accessToken, refreshToken,
+  driver: {
+    id, name, phoneNumber, countryCode, gender, homeCity,
+    profilePhotoUrl, language,
+    vehicle: { make, model, color, year, plateNumber, passengerCapacity },
+    rating, ratingCount, totalTrips,
+    createdAt, updatedAt
+  }
+}
+```
 
-Splash-screen probe (S-01). If the stored access token still works,
-returns the driver profile; if it's expired, hit `refresh`. Returns
-403 if the driver was suspended in the meantime.
+**Deliberately excludes real-time state** — `status`, active
+preferences (`destinationCity`, `tripTypes`, `goingHome`, etc.), and
+`outstandingBalance`. Those come from `GET /drivers/home-summary` /
+`GET /drivers/profile`, which the app calls on every Home tab open.
+
+3 wrong attempts lock the account for 10 min (403).
 
 ### `POST /auth/driver/refresh`
 
@@ -53,11 +68,19 @@ Pass the **refresh** token as the Bearer header. Returns new
 access + refresh tokens. After this, discard the old refresh — it's
 been rotated server-side.
 
-### `POST /auth/driver/logout`
+### Session validation & logout
 
-Authenticated. Invalidates the refresh token server-side. The current
-access token stays valid until its TTL expires (15 min cap), so wipe
-local storage too.
+There are **no `verify-session` / `logout` endpoints** — both are
+handled client-side:
+
+- **Session validation on launch.** Try the cached access token against
+  any guarded endpoint (e.g. `GET /drivers/home-summary`). If it 401s,
+  hit `/refresh`; if that also 401s, route to Login. No dedicated probe
+  call.
+- **Logout.** Wipe the local token + driver cache. The refresh token
+  isn't revoked server-side (the previous endpoint did that, but it's
+  been removed); since refresh tokens have a 7-day TTL and are stored
+  only on the device, that's a deliberate tradeoff for a simpler API.
 
 ---
 
