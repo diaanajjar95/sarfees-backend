@@ -180,10 +180,7 @@ Records the driver's current position. Recommended cadence:
 ```json
 {
   "lat": 31.9539,
-  "lng": 35.9106,
-  "heading": 124.5,       // optional, 0–360 degrees
-  "speed": 18.4,          // optional, m/s
-  "accuracy": 8.5         // optional, meters
+  "lng": 35.9106
 }
 ```
 
