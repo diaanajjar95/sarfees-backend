@@ -205,9 +205,41 @@ can preload the initial position before calling `activate`), but a
 
 ### `PATCH /drivers/settings`
 
-For the Settings screen — `fcmToken`, `language`, and the four
-`notify*` toggles. **Send the FCM token here right after login** so
-push delivery (when wired) targets the right device.
+For the Settings screen — `language` and the four `notify*` toggles
+(`tripOffers`, `tripUpdates`, `earnings`, `announcements`). Partial
+body.
+
+```json
+{
+  "language": "en",
+  "notifications": {
+    "tripOffers": true,
+    "tripUpdates": true,
+    "earnings": true,
+    "announcements": false
+  }
+}
+```
+
+### `PUT /drivers/me/fcm-token`
+
+Idempotent setter for the Firebase Cloud Messaging registration token
+that the backend uses to address push notifications to this device.
+
+```json
+{ "fcmToken": "fGz3iY...:APA91b..." }
+```
+
+Response: `{ "updated": true }`.
+
+**When to call:**
+- Right after `verify-otp` succeeds (so the brand-new session has a
+  device address ready).
+- Whenever FirebaseMessaging fires a token-refresh callback (Android:
+  `onNewToken`, iOS: `messaging:didReceiveRegistrationToken:`).
+
+Separate from `/settings` so the high-frequency refresh-callback
+writes don't race the settings-screen language / toggle updates.
 
 ---
 

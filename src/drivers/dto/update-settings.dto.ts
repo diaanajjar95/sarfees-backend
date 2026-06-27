@@ -42,9 +42,4 @@ export class UpdateSettingsDto {
   @ValidateNested()
   @Type(() => NotificationPrefsDto)
   notifications?: NotificationPrefsDto;
-
-  @ApiPropertyOptional({ description: 'Firebase push notification token' })
-  @IsOptional()
-  @IsString()
-  fcmToken?: string;
 }
