@@ -25,7 +25,6 @@ import { DriversService } from './drivers.service';
 import { EarningsService } from './earnings.service';
 import { ActivatePreferencesDto } from './dto/activate-preferences.dto';
 import { UpdatePreferencesDto } from './dto/update-preferences.dto';
-import { DeactivateDto } from './dto/deactivate.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { DriverProfileResponseDto } from './dto/driver-profile-response.dto';
 import { HomeSummaryResponseDto } from './dto/home-summary-response.dto';
@@ -79,15 +78,13 @@ export class DriversController {
 
   @ApiOperation({
     summary: 'Deactivate session (S-06 Go Offline)',
-    description: 'Marks driver INACTIVE and clears session preferences.',
+    description:
+      'Marks driver INACTIVE and clears session preferences. No request body.',
   })
   @ApiResponse({ status: 200, type: DriverProfileResponseDto })
   @HttpCode(HttpStatus.OK)
   @Post('deactivate')
-  deactivate(
-    @Req() req: Request,
-    @Body() _dto: DeactivateDto,
-  ): Promise<DriverProfileResponseDto> {
+  deactivate(@Req() req: Request): Promise<DriverProfileResponseDto> {
     return this.driversService.deactivate(this.driverId(req));
   }
 
