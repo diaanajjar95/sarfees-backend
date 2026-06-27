@@ -309,9 +309,6 @@ export class DriversService {
       trip: null,
       lat: dto.lat,
       lng: dto.lng,
-      heading: dto.heading ?? (null as unknown as number),
-      speed: dto.speed ?? (null as unknown as number),
-      accuracy: dto.accuracy ?? (null as unknown as number),
     });
     const saved = await this.driverLocationRepository.save(row);
 
