@@ -269,7 +269,6 @@ export class DriversService {
 
     const patch: Partial<Driver> = {};
     if (dto.language) patch.language = dto.language;
-    if (dto.fcmToken !== undefined) patch.fcmToken = dto.fcmToken;
     if (dto.notifications) {
       const n = dto.notifications;
       if (n.tripOffers !== undefined) patch.notifyTripOffers = n.tripOffers;
@@ -283,6 +282,23 @@ export class DriversService {
       ? await this.update(driver.id, patch)
       : driver;
     return DriverProfileResponseDto.from(updated as Driver);
+  }
+
+  // ─── FCM push-notification token (own endpoint, called on login + refresh) ─
+  /**
+   * Idempotent "set the current FCM token for this driver". Separate from
+   * /drivers/settings because the mobile app fires this on every login and
+   * every FirebaseMessaging token-refresh callback — keeping it off the
+   * settings surface avoids racing those high-frequency writes against
+   * language / notification-toggle changes.
+   */
+  async updateFcmToken(
+    driverId: number,
+    fcmToken: string,
+  ): Promise<{ updated: boolean }> {
+    const driver = await this.requireDriver(driverId);
+    await this.update(driver.id, { fcmToken });
+    return { updated: true };
   }
 
   // ─── Location ping (high-frequency, trip-agnostic) ─────────

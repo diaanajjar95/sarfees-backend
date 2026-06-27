@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -26,6 +27,10 @@ import { EarningsService } from './earnings.service';
 import { ActivatePreferencesDto } from './dto/activate-preferences.dto';
 import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
+import {
+  UpdateFcmTokenDto,
+  UpdateFcmTokenResponseDto,
+} from './dto/update-fcm-token.dto';
 import { DriverProfileResponseDto } from './dto/driver-profile-response.dto';
 import { HomeSummaryResponseDto } from './dto/home-summary-response.dto';
 import {
@@ -102,7 +107,10 @@ export class DriversController {
 
   // ─── S-17 Settings ─────────────────────────────────────────
   @ApiOperation({
-    summary: 'Update settings — language, notification flags, fcm token (S-17)',
+    summary: 'Update settings — language + notification flags (S-17)',
+    description:
+      'FCM push-notification token now lives on its own endpoint at ' +
+      '`PUT /drivers/me/fcm-token`.',
   })
   @ApiResponse({ status: 200, type: DriverProfileResponseDto })
   @Patch('settings')
@@ -111,6 +119,24 @@ export class DriversController {
     @Body() dto: UpdateSettingsDto,
   ): Promise<DriverProfileResponseDto> {
     return this.driversService.updateSettings(this.driverId(req), dto);
+  }
+
+  // ─── FCM token (own endpoint — called on login + refresh) ──
+  @ApiOperation({
+    summary: "Register or refresh the driver's FCM push-notification token",
+    description:
+      'Idempotent setter. Call this right after `verify-otp` succeeds and ' +
+      'whenever FirebaseMessaging fires a token-refresh callback. The body ' +
+      'is just `{ "fcmToken": "<token>" }`.',
+  })
+  @ApiResponse({ status: 200, type: UpdateFcmTokenResponseDto })
+  @HttpCode(HttpStatus.OK)
+  @Put('me/fcm-token')
+  updateFcmToken(
+    @Req() req: Request,
+    @Body() dto: UpdateFcmTokenDto,
+  ): Promise<UpdateFcmTokenResponseDto> {
+    return this.driversService.updateFcmToken(this.driverId(req), dto.fcmToken);
   }
 
   // ─── Location ping (high-frequency) ────────────────────────
