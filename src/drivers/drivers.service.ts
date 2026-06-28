@@ -10,18 +10,38 @@ import { I18nContext } from 'nestjs-i18n';
 import { Driver } from './driver.entity';
 import { DriverStatus } from '../shared/enums/driver-status.enum';
 import { DriverTrip } from '../driver-trips/entities/driver-trip.entity';
+import { DriverTripStop } from '../driver-trips/entities/driver-trip-stop.entity';
+import { DriverTripStopPassenger } from '../driver-trips/entities/driver-trip-stop-passenger.entity';
+import { DriverTripStopPackage } from '../driver-trips/entities/driver-trip-stop-package.entity';
 import { DriverTripStatus } from '../shared/enums/driver-trip-status.enum';
+import {
+  StopPassengerRole,
+  StopPassengerStatus,
+} from '../shared/enums/stop-passenger-status.enum';
+import { StopPackageRole } from '../shared/enums/stop-package-status.enum';
 import { DriverLocation } from '../trips/entities/driver-location.entity';
 import { ActivatePreferencesDto } from './dto/activate-preferences.dto';
 import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 import { UpdateSettingsDto } from './dto/update-settings.dto';
 import { DriverProfileResponseDto } from './dto/driver-profile-response.dto';
-import { HomeSummaryResponseDto } from './dto/home-summary-response.dto';
+import {
+  CurrentStopDto,
+  CurrentStopPackageDto,
+  CurrentStopPassengerDto,
+  CurrentTripDto,
+  HomeSummaryResponseDto,
+  OnBoardDto,
+  StopProgressItemDto,
+  UpNextStopDto,
+} from './dto/home-summary-response.dto';
 import {
   LocationPingDto,
   LocationPingResponseDto,
 } from './dto/location-ping.dto';
 import { AnnouncementsService } from '../announcements/announcements.service';
+
+/** Average city speed used for ETA estimation in /drivers/home-summary. */
+const ETA_AVG_KMH = 40;
 
 @Injectable()
 export class DriversService {
@@ -30,6 +50,12 @@ export class DriversService {
     private readonly driversRepository: Repository<Driver>,
     @InjectRepository(DriverTrip)
     private readonly driverTripsRepository: Repository<DriverTrip>,
+    @InjectRepository(DriverTripStop)
+    private readonly driverTripStopsRepository: Repository<DriverTripStop>,
+    @InjectRepository(DriverTripStopPassenger)
+    private readonly stopPassengersRepository: Repository<DriverTripStopPassenger>,
+    @InjectRepository(DriverTripStopPackage)
+    private readonly stopPackagesRepository: Repository<DriverTripStopPackage>,
     @InjectRepository(DriverLocation)
     private readonly driverLocationRepository: Repository<DriverLocation>,
     private readonly announcementsService: AnnouncementsService,
@@ -131,6 +157,13 @@ export class DriversService {
         }
       : null;
 
+    // Status-conditional `currentTrip` block — only built when the driver
+    // is mid-trip; null otherwise. See dto/home-summary-response.dto.ts.
+    const currentTrip =
+      driver.status === DriverStatus.ON_TRIP
+        ? await this.buildCurrentTrip(driver)
+        : null;
+
     return {
       status: driver.status,
       activePreferences,
@@ -148,7 +181,224 @@ export class DriversService {
         : null,
       outstandingBalance: Number(driver.outstandingBalance),
       announcements,
+      currentTrip,
     };
+  }
+
+  // ─── on_trip block builder ─────────────────────────────────
+  /**
+   * Build the CurrentTripDto embedded in /drivers/home-summary when the
+   * driver's status is ON_TRIP. Single-trip query — driver can only be on
+   * one ACCEPTED/IN_PROGRESS trip at a time, enforced by the accept flow.
+   *
+   * Returns `null` when no active trip exists (treated as a soft state
+   * mismatch — caller surfaces it as currentTrip:null rather than 500).
+   */
+  private async buildCurrentTrip(driver: Driver): Promise<CurrentTripDto | null> {
+    const trip = await this.driverTripsRepository.findOne({
+      where: [
+        { driver: { id: driver.id }, status: DriverTripStatus.ACCEPTED },
+        { driver: { id: driver.id }, status: DriverTripStatus.IN_PROGRESS },
+      ],
+      order: { acceptedAt: 'DESC' },
+    });
+    if (!trip) return null;
+
+    // Pull every stop with its passenger/package join rows + the linked
+    // TripRequest.passenger and PackageDelivery.sender for the driver-
+    // facing name/phone fields.
+    const stops = await this.driverTripStopsRepository.find({
+      where: { trip: { id: trip.id } },
+      relations: [
+        'passengers',
+        'passengers.tripRequest',
+        'passengers.tripRequest.passenger',
+        'packages',
+        'packages.packageDelivery',
+        'packages.packageDelivery.sender',
+      ],
+      order: { order: 'ASC' },
+    });
+
+    const driverLat =
+      driver.prefLocationLat != null ? Number(driver.prefLocationLat) : null;
+    const driverLng =
+      driver.prefLocationLng != null ? Number(driver.prefLocationLng) : null;
+
+    const currentStopRow = stops.find((s) => s.order === trip.currentStopIndex);
+    const upNextStopRow = stops.find(
+      (s) => s.order === trip.currentStopIndex + 1,
+    );
+
+    const currentStop: CurrentStopDto | null = currentStopRow
+      ? {
+          id: currentStopRow.id,
+          order: currentStopRow.order,
+          type: currentStopRow.type,
+          city: currentStopRow.city,
+          address: currentStopRow.address ?? null,
+          lat: Number(currentStopRow.lat),
+          lng: Number(currentStopRow.lng),
+          status: currentStopRow.status,
+          cashAtStop: Number(currentStopRow.cashExpected),
+          etaMinutes: this.etaMinutesTo(
+            driverLat,
+            driverLng,
+            Number(currentStopRow.lat),
+            Number(currentStopRow.lng),
+          ),
+          passengers: currentStopRow.passengers.map<CurrentStopPassengerDto>(
+            (sp) => ({
+              id: sp.tripRequest?.id ?? 0,
+              name: this.fullName(sp.tripRequest?.passenger),
+              phone: this.fullPhone(sp.tripRequest?.passenger),
+              role: sp.role,
+              fare: Number(sp.fare),
+            }),
+          ),
+          packages: currentStopRow.packages.map<CurrentStopPackageDto>(
+            (pk) => ({
+              id: pk.packageDelivery?.id ?? 0,
+              reference: `PKG-${pk.packageDelivery?.id ?? 0}`,
+              contactName:
+                pk.role === StopPackageRole.COLLECTING
+                  ? this.fullName(pk.packageDelivery?.sender)
+                  : (pk.packageDelivery?.receiverName ?? ''),
+              contactPhone:
+                pk.role === StopPackageRole.COLLECTING
+                  ? this.fullPhone(pk.packageDelivery?.sender)
+                  : (pk.packageDelivery?.receiverPhone ?? ''),
+              role: pk.role,
+              fee: Number(pk.fee),
+            }),
+          ),
+        }
+      : null;
+
+    const stopsProgress: StopProgressItemDto[] = stops.map((s) => ({
+      order: s.order,
+      type: s.type,
+      status: s.status,
+    }));
+
+    // "On board" = boarding passengers who have been picked up AND whose
+    // corresponding alighting link hasn't been confirmed yet.
+    // tripRequestId is the join key (one trip request → one boarding +
+    // one alighting link).
+    const boardingByRequest = new Map<
+      number,
+      { name: string; pickedUp: boolean }
+    >();
+    const droppedRequestIds = new Set<number>();
+    for (const stop of stops) {
+      for (const sp of stop.passengers) {
+        const trId = sp.tripRequest?.id;
+        if (!trId) continue;
+        if (sp.role === StopPassengerRole.BOARDING) {
+          const pickedUp = sp.status === StopPassengerStatus.PICKED_UP;
+          boardingByRequest.set(trId, {
+            name: this.fullName(sp.tripRequest?.passenger),
+            pickedUp,
+          });
+        } else if (sp.role === StopPassengerRole.ALIGHTING) {
+          if (
+            sp.status === StopPassengerStatus.DROPPED_OFF ||
+            sp.status === StopPassengerStatus.CASH_NOT_COLLECTED
+          ) {
+            droppedRequestIds.add(trId);
+          }
+        }
+      }
+    }
+    const onBoardEntries = [...boardingByRequest.entries()]
+      .filter(([trId, b]) => b.pickedUp && !droppedRequestIds.has(trId))
+      .map(([trId, b]) => ({ id: trId, name: b.name }));
+    const onBoard: OnBoardDto = {
+      passengerCount: onBoardEntries.length,
+      passengers: onBoardEntries,
+    };
+
+    const totalCashCollected = Number(trip.totalCashCollected);
+    const commissionRate = Number(trip.commissionRate);
+    const earnedSoFar = {
+      totalCashCollected,
+      commissionRate,
+      netEarningsSoFar:
+        Math.round(totalCashCollected * (1 - commissionRate) * 100) / 100,
+    };
+
+    const upNext: UpNextStopDto | null = upNextStopRow
+      ? {
+          order: upNextStopRow.order,
+          type: upNextStopRow.type,
+          city: upNextStopRow.city,
+          address: upNextStopRow.address ?? null,
+          cashAtStop: Number(upNextStopRow.cashExpected),
+          etaMinutes: this.etaMinutesTo(
+            driverLat,
+            driverLng,
+            Number(upNextStopRow.lat),
+            Number(upNextStopRow.lng),
+          ),
+        }
+      : null;
+
+    return {
+      id: trip.id,
+      type: trip.type,
+      status: trip.status,
+      originCity: trip.originCity,
+      destinationCity: trip.destinationCity,
+      currentStopIndex: trip.currentStopIndex,
+      totalStops: stops.length,
+      currentStop,
+      stopsProgress,
+      onBoard,
+      earnedSoFar,
+      upNext,
+    };
+  }
+
+  /**
+   * Haversine distance × inverse avg-speed → integer minutes.
+   * Returns `null` when the driver has no location snapshot.
+   * Snaps to 0 within ~50m of the target (driver is "at the stop").
+   */
+  private etaMinutesTo(
+    fromLat: number | null,
+    fromLng: number | null,
+    toLat: number,
+    toLng: number,
+  ): number | null {
+    if (fromLat == null || fromLng == null) return null;
+    const R_KM = 6371;
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const dLat = toRad(toLat - fromLat);
+    const dLng = toRad(toLng - fromLng);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(fromLat)) *
+        Math.cos(toRad(toLat)) *
+        Math.sin(dLng / 2) ** 2;
+    const km = 2 * R_KM * Math.asin(Math.sqrt(a));
+    if (km < 0.05) return 0;
+    return Math.max(1, Math.round((km / ETA_AVG_KMH) * 60));
+  }
+
+  private fullName(user?: {
+    firstName?: string | null;
+    lastName?: string | null;
+  }): string {
+    if (!user) return '';
+    return `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim();
+  }
+
+  private fullPhone(user?: {
+    countryCode?: string | null;
+    phoneNumber?: string | null;
+  }): string {
+    if (!user) return '';
+    return `${user.countryCode ?? ''}${user.phoneNumber ?? ''}`.trim();
   }
 
   // ─── S-05 Activate ─────────────────────────────────────────
