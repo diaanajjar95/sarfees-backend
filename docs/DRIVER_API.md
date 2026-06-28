@@ -117,13 +117,89 @@ the **persistent** carousel + balance.
   // Persistent
   lastTrip: { origin, destination, completedAt, earnings } | null,
   outstandingBalance: number,              // platform commission owed
-  announcements: AnnouncementCarouselItem[]
+  announcements: AnnouncementCarouselItem[],
+
+  // Status-conditional blocks — exactly one is non-null at a time.
+  // Other status variants (inactive/active/suspended) ship in separate slices.
+  currentTrip: CurrentTripDto | null       // populated iff status='on_trip'
 }
 ```
 
 The mobile app should call this on every Home tab open + after each
 trip completes — those are the moments when one of the live or
 today-rollup fields might have changed.
+
+#### `currentTrip` (when `status === 'on_trip'`)
+
+Carries everything the mobile "Resume Trip" card renders so the Home
+tab can paint without a follow-up `/trips/active` or
+`/drivers/trips/:id/manifest` call.
+
+```ts
+currentTrip: {
+  id, type, status,                      // type ∈ shared|women_only|mixed|packages_only
+  originCity, destinationCity,
+  currentStopIndex: number,               // 0-based
+  totalStops: number,
+
+  // Stop the driver is heading to / currently at.
+  currentStop: {
+    id, order, type,                      // type ∈ pickup|dropoff|pickup_dropoff
+    city, address,                        // address is nullable
+    lat, lng,                             // for the Navigate button deep link
+    status,                               // pending|arrived|confirmed
+    cashAtStop: number,                   // sum of fares/fees due here
+    etaMinutes: number | null,            // Haversine ÷ 40km/h. null = no GPS ping yet
+    passengers: [
+      { id, name, phone,                  // tripRequestId, full name, full phone
+        role: 'boarding'|'alighting',
+        fare }
+    ],
+    packages: [
+      { id, reference, contactName, contactPhone,   // contact = sender (collecting) or receiver (delivering)
+        role: 'collecting'|'delivering',
+        fee }
+    ]
+  } | null,                               // null only when currentStopIndex past last stop
+
+  // Drives the progress-dots strip.
+  stopsProgress: [
+    { order, type, status }
+  ],
+
+  // "ON BOARD" card — passengers currently in the vehicle.
+  onBoard: {
+    passengerCount,
+    passengers: [ { id, name } ]          // mobile renders initials from name
+  },
+
+  // "EARNED SO FAR" card — running net for this trip only.
+  earnedSoFar: {
+    totalCashCollected,
+    commissionRate,                       // e.g. 0.15
+    netEarningsSoFar                      // totalCash × (1 − rate), rounded to 2dp
+  },
+
+  // "UP NEXT" card — stop after the current one. null on the last stop.
+  upNext: {
+    order, type, city, address,
+    cashAtStop, etaMinutes
+  } | null
+}
+```
+
+**Notes for the mobile team:**
+
+- Phone numbers are **unmasked** here. This endpoint is driver-only
+  (jwt-driver) and the driver needs to call passengers to identify
+  them on pickup.
+- `etaMinutes: 0` means the driver is within ~50m of the stop (Haversine
+  threshold) — render as "Now" / "At stop" in the UI.
+- `etaMinutes: null` means the driver hasn't pinged `/drivers/me/location`
+  yet — render as "—".
+- The mock shows "Irbid · Sareeh" on the city line; the backend only
+  has `city: "Irbid"`. The neighborhood would need a separate `area`
+  column (not in scope for this slice).
 
 ---
 
