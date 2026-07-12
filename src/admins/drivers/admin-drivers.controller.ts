@@ -21,6 +21,7 @@ import {
 import { AdminDriversService } from './admin-drivers.service';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverDto } from './dto/update-driver.dto';
+import { SuspendDriverDto } from './dto/suspend-driver.dto';
 import {
   ListDriversQueryDto,
   ListDriversResponseDto,
@@ -71,15 +72,22 @@ export class AdminDriversController {
     return this.service.update(id, dto);
   }
 
-  @ApiOperation({ summary: 'Suspend a driver (blocks login + activation)' })
+  @ApiOperation({
+    summary: 'Suspend a driver (blocks login + activation)',
+    description:
+      'Optional body `{ reason?: string }`. When provided, the reason is ' +
+      'stored and surfaced back to the driver via ' +
+      '`home-summary.suspensionInfo.reason` while they remain suspended.',
+  })
   @ApiResponse({ status: 200, type: DriverProfileResponseDto })
   @Roles(AdminRole.SUPER_ADMIN, AdminRole.OPS_MANAGER)
   @HttpCode(HttpStatus.OK)
   @Post(':id/suspend')
   suspend(
     @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SuspendDriverDto,
   ): Promise<DriverProfileResponseDto> {
-    return this.service.suspend(id);
+    return this.service.suspend(id, dto.reason);
   }
 
   @ApiOperation({ summary: 'Reinstate a suspended driver' })

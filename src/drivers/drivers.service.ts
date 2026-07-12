@@ -4,8 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { And, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
 import { I18nContext } from 'nestjs-i18n';
 import { Driver } from './driver.entity';
 import { DriverStatus } from '../shared/enums/driver-status.enum';
@@ -30,8 +31,11 @@ import {
   CurrentStopPassengerDto,
   CurrentTripDto,
   HomeSummaryResponseDto,
+  LastSessionDto,
   OnBoardDto,
+  PendingOfferDto,
   StopProgressItemDto,
+  SuspensionInfoDto,
   UpNextStopDto,
 } from './dto/home-summary-response.dto';
 import {
@@ -59,6 +63,7 @@ export class DriversService {
     @InjectRepository(DriverLocation)
     private readonly driverLocationRepository: Repository<DriverLocation>,
     private readonly announcementsService: AnnouncementsService,
+    private readonly configService: ConfigService,
   ) {}
 
   // ─── Lookups (used by auth slice) ──────────────────────────
@@ -157,11 +162,23 @@ export class DriversService {
         }
       : null;
 
-    // Status-conditional `currentTrip` block — only built when the driver
-    // is mid-trip; null otherwise. See dto/home-summary-response.dto.ts.
+    // Status-conditional blocks — at most one non-null at a time.
+    // Each builder returns null when the driver's status doesn't match.
     const currentTrip =
       driver.status === DriverStatus.ON_TRIP
         ? await this.buildCurrentTrip(driver)
+        : null;
+    const pendingOffer =
+      driver.status === DriverStatus.ACTIVE
+        ? await this.buildPendingOffer(driver)
+        : null;
+    const lastSession =
+      driver.status === DriverStatus.INACTIVE
+        ? await this.buildLastSession(driver)
+        : null;
+    const suspensionInfo =
+      driver.status === DriverStatus.SUSPENDED
+        ? this.buildSuspensionInfo(driver)
         : null;
 
     return {
@@ -182,6 +199,9 @@ export class DriversService {
       outstandingBalance: Number(driver.outstandingBalance),
       announcements,
       currentTrip,
+      pendingOffer,
+      lastSession,
+      suspensionInfo,
     };
   }
 
@@ -359,6 +379,104 @@ export class DriversService {
     };
   }
 
+  // ─── active block builder ──────────────────────────────────
+  /**
+   * Populated iff `status === 'active'` AND the matcher has dispatched
+   * a `DriverTrip` in `OFFERED` state to this driver whose countdown
+   * hasn't expired. Returns `null` when the driver is active-and-idle
+   * (no offer waiting).
+   *
+   * A stale-but-still-in-the-table `OFFERED` row whose `offerExpiresAt`
+   * has passed is treated as `null` here — the expire-if-needed cleanup
+   * happens elsewhere and we shouldn't advertise an offer the mobile
+   * client can't actually accept.
+   */
+  private async buildPendingOffer(
+    driver: Driver,
+  ): Promise<PendingOfferDto | null> {
+    const now = new Date();
+    const trip = await this.driverTripsRepository.findOne({
+      where: {
+        driver: { id: driver.id },
+        status: DriverTripStatus.OFFERED,
+        offerExpiresAt: MoreThanOrEqual(now),
+      },
+      order: { offeredAt: 'DESC' },
+    });
+    if (!trip) return null;
+    return {
+      tripId: trip.id,
+      originCity: trip.originCity,
+      destinationCity: trip.destinationCity,
+      type: trip.type,
+      offerExpiresAt: trip.offerExpiresAt,
+      secondsRemaining: Math.max(
+        0,
+        Math.floor((trip.offerExpiresAt.getTime() - now.getTime()) / 1000),
+      ),
+    };
+  }
+
+  // ─── inactive block builder ────────────────────────────────
+  /**
+   * Populated iff `status === 'inactive'` AND the driver has a
+   * complete activate → deactivate cycle recorded (i.e. both
+   * `lastSessionStartedAt` and `lastSessionEndedAt` are set).
+   *
+   * Sums `netEarnings` and counts completed trips that fell between
+   * the session boundaries.
+   */
+  private async buildLastSession(
+    driver: Driver,
+  ): Promise<LastSessionDto | null> {
+    if (!driver.lastSessionStartedAt || !driver.lastSessionEndedAt) return null;
+    const start = new Date(driver.lastSessionStartedAt);
+    const end = new Date(driver.lastSessionEndedAt);
+    if (end <= start) return null;
+
+    const trips = await this.driverTripsRepository.find({
+      where: {
+        driver: { id: driver.id },
+        status: DriverTripStatus.COMPLETED,
+        completedAt: And(MoreThanOrEqual(start), LessThanOrEqual(end)),
+      },
+    });
+    const earnings =
+      Math.round(
+        trips.reduce((n, t) => n + (Number(t.netEarnings) || 0), 0) * 100,
+      ) / 100;
+    const durationMinutes = Math.max(
+      0,
+      Math.round((end.getTime() - start.getTime()) / 60000),
+    );
+    return {
+      startedAt: start,
+      endedAt: end,
+      durationMinutes,
+      tripsCompleted: trips.length,
+      earnings,
+    };
+  }
+
+  // ─── suspended block builder ───────────────────────────────
+  /**
+   * Populated iff `status === 'suspended'`. Reads audit fields set by
+   * the admin suspend endpoint plus the support contact info from env.
+   *
+   * `suspendedAt` may be `null` on drivers suspended before the audit
+   * columns shipped — we default it to `updatedAt` in that case so the
+   * mobile UI always has something to render.
+   */
+  private buildSuspensionInfo(driver: Driver): SuspensionInfoDto {
+    return {
+      suspendedAt: driver.suspendedAt ?? driver.updatedAt,
+      reason: driver.suspensionReason ?? null,
+      supportEmail:
+        this.configService.get<string>('SUPPORT_EMAIL') ?? 'support@sarfees.com',
+      supportPhone: this.configService.get<string>('SUPPORT_PHONE') ?? null,
+    };
+  }
+
   /**
    * Haversine distance × inverse avg-speed → integer minutes.
    * Returns `null` when the driver has no location snapshot.
@@ -423,6 +541,7 @@ export class DriversService {
     // Location is optional on activate — drivers can also seed it via
     // POST /drivers/me/location before going active. When omitted, the
     // existing prefLocation* values (if any) are preserved.
+    const now = new Date();
     const patch: Partial<Driver> = {
       status: DriverStatus.ACTIVE,
       prefDestinationCity: destinationCity as unknown as string,
@@ -432,7 +551,13 @@ export class DriversService {
         dto.minPassengers != null
           ? dto.minPassengers
           : (null as unknown as number),
-      prefActivatedAt: new Date(),
+      prefActivatedAt: now,
+      // Session-audit bookmarks — populate on every fresh activation.
+      // A new session erases the prior lastSessionEndedAt so the
+      // inactive-block builder won't surface a stale summary while
+      // the driver is mid-session.
+      lastSessionStartedAt: now,
+      lastSessionEndedAt: null as unknown as Date,
     };
     if (dto.currentLocationLat != null) {
       patch.prefLocationLat = dto.currentLocationLat;
@@ -464,6 +589,10 @@ export class DriversService {
       prefActivatedAt: null as unknown as Date,
       prefLocationLat: null as unknown as number,
       prefLocationLng: null as unknown as number,
+      // Stamp the session end. lastSessionStartedAt is preserved so the
+      // home-summary lastSession block can compute duration + trips
+      // between started/ended.
+      lastSessionEndedAt: new Date(),
     });
 
     return DriverProfileResponseDto.from(updated as Driver);

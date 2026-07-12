@@ -119,9 +119,11 @@ the **persistent** carousel + balance.
   outstandingBalance: number,              // platform commission owed
   announcements: AnnouncementCarouselItem[],
 
-  // Status-conditional blocks — exactly one is non-null at a time.
-  // Other status variants (inactive/active/suspended) ship in separate slices.
-  currentTrip: CurrentTripDto | null       // populated iff status='on_trip'
+  // Status-conditional blocks — at most one is non-null at a time.
+  currentTrip:     CurrentTripDto     | null   // iff status='on_trip'
+  pendingOffer:    PendingOfferDto    | null   // iff status='active' AND offer waiting
+  lastSession:     LastSessionDto     | null   // iff status='inactive' AND a session has ended
+  suspensionInfo:  SuspensionInfoDto  | null   // iff status='suspended'
 }
 ```
 
@@ -200,6 +202,66 @@ currentTrip: {
 - The mock shows "Irbid · Sareeh" on the city line; the backend only
   has `city: "Irbid"`. The neighborhood would need a separate `area`
   column (not in scope for this slice).
+
+#### `pendingOffer` (when `status === 'active'`)
+
+Populated the instant the matcher dispatches a `DriverTrip` in
+`OFFERED` state to this driver — so the app can jump straight to
+`OfferScreen` on the next Home refresh without polling `/drivers/trips/:id/offer`.
+`null` when the driver is active-and-idle (no offer waiting).
+
+```ts
+pendingOffer: {
+  tripId: number,                   // deep-link into OfferScreen
+  originCity, destinationCity,
+  type,                              // shared|women_only|mixed|packages_only
+  offerExpiresAt: Date,              // hard deadline server-side
+  secondsRemaining: number           // computed at read time; use as the countdown seed
+} | null
+```
+
+Stale offers whose `offerExpiresAt` has passed are treated as `null`
+here — the mobile client won't get an offer it can't actually accept.
+
+#### `lastSession` (when `status === 'inactive'`)
+
+Populated when the driver has completed at least one activate →
+deactivate cycle. Compact summary of the most recent session — gives
+the Home tab something concrete to show alongside the "Go online" CTA
+("Last shift: 4 h 35 m · 4 trips · 32.50 JD").
+
+```ts
+lastSession: {
+  startedAt: Date,                   // = driver.lastSessionStartedAt
+  endedAt: Date,                     // = driver.lastSessionEndedAt
+  durationMinutes: number,           // whole minutes
+  tripsCompleted: number,            // trips whose completedAt fell in the window
+  earnings: number                   // SUM(netEarnings) for those trips, 2dp
+} | null
+```
+
+`null` for drivers who have never activated, or whose session-audit
+timestamps are missing (drivers who were suspended/reinstated before
+this feature shipped).
+
+#### `suspensionInfo` (when `status === 'suspended'`)
+
+The lockout-state card. Includes the ops-provided reason (if any) and
+the support contact info the mobile UI needs to render the "Contact
+support" CTA.
+
+```ts
+suspensionInfo: {
+  suspendedAt: Date,                 // = driver.suspendedAt, falls back to updatedAt
+  reason: string | null,             // = driver.suspensionReason
+  supportEmail: string,              // from SUPPORT_EMAIL env
+  supportPhone: string | null        // from SUPPORT_PHONE env
+}
+```
+
+Admin can suspend + reinstate via `POST /admin/drivers/:id/suspend`
+(body `{ reason?: string }`) and `POST /admin/drivers/:id/reinstate`.
+Reinstate clears both audit fields.
 
 ---
 
