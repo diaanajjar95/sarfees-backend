@@ -139,6 +139,24 @@ export class Driver {
   @Column({ default: true })
   notifyAnnouncements: boolean;
 
+  // ─── Session audit (last activate/deactivate cycle) ─────────
+  /** When the driver most recently transitioned to ACTIVE. Survives deactivate. */
+  @Column({ type: 'timestamp', nullable: true })
+  lastSessionStartedAt: Date;
+
+  /** When the driver most recently transitioned back to INACTIVE. */
+  @Column({ type: 'timestamp', nullable: true })
+  lastSessionEndedAt: Date;
+
+  // ─── Suspension audit (admin suspend/reinstate) ─────────────
+  /** When admin last suspended the driver. Cleared on reinstate. */
+  @Column({ type: 'timestamp', nullable: true })
+  suspendedAt: Date;
+
+  /** Optional reason string admin provides on suspend. Cleared on reinstate. */
+  @Column({ type: 'text', nullable: true })
+  suspensionReason: string;
+
   @CreateDateColumn()
   createdAt: Date;
 

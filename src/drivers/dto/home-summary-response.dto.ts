@@ -100,6 +100,54 @@ export class UpNextStopDto {
   @ApiPropertyOptional({ nullable: true }) etaMinutes: number | null;
 }
 
+// ─── active block ───────────────────────────────────────────
+
+export class PendingOfferDto {
+  @ApiProperty({ description: 'DriverTrip id — deep-link into OfferScreen.' })
+  tripId: number;
+  @ApiProperty({ example: 'Irbid' }) originCity: string;
+  @ApiProperty({ example: 'Amman' }) destinationCity: string;
+  @ApiProperty({ enum: DriverTripType }) type: DriverTripType;
+  @ApiProperty({ type: 'string', format: 'date-time' })
+  offerExpiresAt: Date;
+  @ApiProperty({
+    example: 32,
+    description: 'Seconds remaining before the offer auto-expires (server clock).',
+  })
+  secondsRemaining: number;
+}
+
+// ─── inactive block ─────────────────────────────────────────
+
+export class LastSessionDto {
+  @ApiProperty({ type: 'string', format: 'date-time' })
+  startedAt: Date;
+  @ApiProperty({ type: 'string', format: 'date-time' })
+  endedAt: Date;
+  @ApiProperty({ example: 275, description: 'Session duration in whole minutes.' })
+  durationMinutes: number;
+  @ApiProperty({ example: 4, description: 'Trips completed during this session.' })
+  tripsCompleted: number;
+  @ApiProperty({
+    example: 32.5,
+    description: 'Sum of `netEarnings` for trips completed during this session.',
+  })
+  earnings: number;
+}
+
+// ─── suspended block ────────────────────────────────────────
+
+export class SuspensionInfoDto {
+  @ApiProperty({ type: 'string', format: 'date-time' })
+  suspendedAt: Date;
+  @ApiProperty({ type: 'string', nullable: true, example: 'Fraudulent activity report' })
+  reason: string | null;
+  @ApiProperty({ example: 'support@sarfees.com' })
+  supportEmail: string;
+  @ApiPropertyOptional({ nullable: true, example: '+96265000000' })
+  supportPhone: string | null;
+}
+
 export class CurrentTripDto {
   @ApiProperty() id: number;
   @ApiProperty({ enum: DriverTripType }) type: DriverTripType;
@@ -203,7 +251,7 @@ export class HomeSummaryResponseDto {
   })
   announcements: AnnouncementResponseDto[];
 
-  // ─── Status-conditional blocks (exactly one non-null at a time) ─
+  // ─── Status-conditional blocks (at most one non-null at a time) ─
   @ApiPropertyOptional({
     type: CurrentTripDto,
     description:
@@ -212,4 +260,32 @@ export class HomeSummaryResponseDto {
       'without a follow-up /trips/active or /manifest call.',
   })
   currentTrip: CurrentTripDto | null;
+
+  @ApiPropertyOptional({
+    type: PendingOfferDto,
+    description:
+      "Populated iff `status === 'active'` AND the matcher has dispatched " +
+      'a trip offer that has not yet expired / been accepted / been declined. ' +
+      "`null` otherwise (driver is active and idle, or status isn't active).",
+  })
+  pendingOffer: PendingOfferDto | null;
+
+  @ApiPropertyOptional({
+    type: LastSessionDto,
+    description:
+      "Populated iff `status === 'inactive'` AND the driver has had at " +
+      'least one full activate → deactivate cycle. Compact summary of ' +
+      'that most-recent session so the Home tab has something to render ' +
+      'besides the "Go online" CTA.',
+  })
+  lastSession: LastSessionDto | null;
+
+  @ApiPropertyOptional({
+    type: SuspensionInfoDto,
+    description:
+      "Populated iff `status === 'suspended'`. Includes the suspension " +
+      "reason (if ops provided one) and the support contact fields the " +
+      "mobile UI needs to render the 'Contact support' CTA.",
+  })
+  suspensionInfo: SuspensionInfoDto | null;
 }

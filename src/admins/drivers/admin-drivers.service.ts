@@ -178,7 +178,10 @@ export class AdminDriversService {
     return DriverProfileResponseDto.from(updated as Driver);
   }
 
-  async suspend(id: number): Promise<DriverProfileResponseDto> {
+  async suspend(
+    id: number,
+    reason?: string,
+  ): Promise<DriverProfileResponseDto> {
     const driver = await this.driversRepo.findOne({ where: { id } });
     if (!driver) {
       throw new NotFoundException(
@@ -194,6 +197,8 @@ export class AdminDriversService {
       status: DriverStatus.SUSPENDED,
       // Invalidate refresh token so the driver is logged out next request
       refreshToken: null as unknown as string,
+      suspendedAt: new Date(),
+      suspensionReason: (reason ?? null) as unknown as string,
     });
     const updated = await this.driversRepo.findOne({ where: { id } });
     return DriverProfileResponseDto.from(updated as Driver);
@@ -211,7 +216,11 @@ export class AdminDriversService {
         I18nContext.current()?.t('admin.Not suspended'),
       );
     }
-    await this.driversRepo.update(id, { status: DriverStatus.INACTIVE });
+    await this.driversRepo.update(id, {
+      status: DriverStatus.INACTIVE,
+      suspendedAt: null as unknown as Date,
+      suspensionReason: null as unknown as string,
+    });
     const updated = await this.driversRepo.findOne({ where: { id } });
     return DriverProfileResponseDto.from(updated as Driver);
   }
