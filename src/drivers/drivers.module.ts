@@ -12,6 +12,7 @@ import { DriverTripStopPackage } from '../driver-trips/entities/driver-trip-stop
 import { DriverLocation } from '../trips/entities/driver-location.entity';
 import { TripRequest } from '../trips/entities/trip-request.entity';
 import { PackageDelivery } from '../packages/entities/package-delivery.entity';
+import { DriverDocument } from './documents/driver-document.entity';
 import { AnnouncementsModule } from '../announcements/announcements.module';
 
 @Module({
@@ -25,6 +26,7 @@ import { AnnouncementsModule } from '../announcements/announcements.module';
       DriverLocation,
       TripRequest,
       PackageDelivery,
+      DriverDocument,
     ]),
     PassportModule,
     AnnouncementsModule,

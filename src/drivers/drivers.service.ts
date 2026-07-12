@@ -6,10 +6,18 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { And, LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
+import {
+  And,
+  LessThan,
+  LessThanOrEqual,
+  MoreThanOrEqual,
+  Repository,
+} from 'typeorm';
 import { I18nContext } from 'nestjs-i18n';
 import { Driver } from './driver.entity';
+import { DriverDocument } from './documents/driver-document.entity';
 import { DriverStatus } from '../shared/enums/driver-status.enum';
+import { DriverSuspensionCategory } from '../shared/enums/driver-suspension-category.enum';
 import { DriverTrip } from '../driver-trips/entities/driver-trip.entity';
 import { DriverTripStop } from '../driver-trips/entities/driver-trip-stop.entity';
 import { DriverTripStopPassenger } from '../driver-trips/entities/driver-trip-stop-passenger.entity';
@@ -62,6 +70,8 @@ export class DriversService {
     private readonly stopPackagesRepository: Repository<DriverTripStopPackage>,
     @InjectRepository(DriverLocation)
     private readonly driverLocationRepository: Repository<DriverLocation>,
+    @InjectRepository(DriverDocument)
+    private readonly driverDocumentsRepository: Repository<DriverDocument>,
     private readonly announcementsService: AnnouncementsService,
     private readonly configService: ConfigService,
   ) {}
@@ -187,7 +197,7 @@ export class DriversService {
         : null;
     const suspensionInfo =
       driver.status === DriverStatus.SUSPENDED
-        ? this.buildSuspensionInfo(driver)
+        ? await this.buildSuspensionInfo(driver)
         : null;
 
     return {
@@ -476,13 +486,68 @@ export class DriversService {
    * columns shipped — we default it to `updatedAt` in that case so the
    * mobile UI always has something to render.
    */
-  private buildSuspensionInfo(driver: Driver): SuspensionInfoDto {
+  private async buildSuspensionInfo(
+    driver: Driver,
+  ): Promise<SuspensionInfoDto> {
+    const category = driver.suspensionCategory ?? null;
+
+    // Category-specific extras — exactly one is non-null at a time based
+    // on category. All null for legacy suspensions (category=null).
+    let documentsInfo = null as SuspensionInfoDto['documentsInfo'];
+    let ratingInfo = null as SuspensionInfoDto['ratingInfo'];
+    let paymentInfo = null as SuspensionInfoDto['paymentInfo'];
+    let reviewInfo = null as SuspensionInfoDto['reviewInfo'];
+
+    if (category === DriverSuspensionCategory.DOCUMENTS) {
+      const rows = await this.driverDocumentsRepository.find({
+        where: {
+          driver: { id: driver.id },
+          expiresAt: LessThan(new Date()),
+        },
+      });
+      documentsInfo = {
+        expiredDocuments: rows.map((r) => ({
+          type: r.type,
+          expiresAt: r.expiresAt,
+        })),
+      };
+    } else if (category === DriverSuspensionCategory.RATING) {
+      const min = Number(
+        this.configService.get<string>('DRIVER_MIN_RATING') ?? '4.0',
+      );
+      ratingInfo = {
+        current: Number(driver.rating),
+        minimum: Number.isFinite(min) ? min : 4.0,
+      };
+    } else if (category === DriverSuspensionCategory.PAYMENT) {
+      paymentInfo = {
+        outstandingBalance: Number(driver.outstandingBalance),
+      };
+    } else if (category === DriverSuspensionCategory.VIOLATION) {
+      const minDays = Number(
+        this.configService.get<string>('DRIVER_REVIEW_MIN_DAYS') ?? '1',
+      );
+      const maxDays = Number(
+        this.configService.get<string>('DRIVER_REVIEW_MAX_DAYS') ?? '3',
+      );
+      reviewInfo = {
+        estimatedMinDays: Number.isFinite(minDays) ? minDays : 1,
+        estimatedMaxDays: Number.isFinite(maxDays) ? maxDays : 3,
+        appealAvailable: true,
+      };
+    }
+
     return {
       suspendedAt: driver.suspendedAt ?? driver.updatedAt,
+      category,
       reason: driver.suspensionReason ?? null,
       supportEmail:
         this.configService.get<string>('SUPPORT_EMAIL') ?? 'support@sarfees.com',
       supportPhone: this.configService.get<string>('SUPPORT_PHONE') ?? null,
+      documentsInfo,
+      ratingInfo,
+      paymentInfo,
+      reviewInfo,
     };
   }
 

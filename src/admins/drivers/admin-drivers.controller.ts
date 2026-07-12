@@ -75,9 +75,10 @@ export class AdminDriversController {
   @ApiOperation({
     summary: 'Suspend a driver (blocks login + activation)',
     description:
-      'Optional body `{ reason?: string }`. When provided, the reason is ' +
-      'stored and surfaced back to the driver via ' +
-      '`home-summary.suspensionInfo.reason` while they remain suspended.',
+      'Optional body `{ category?, reason? }`. Both surface back to the ' +
+      'driver via `home-summary.suspensionInfo`. `category` drives which ' +
+      'suspended-card variant the mobile Home tab renders ' +
+      '(documents / rating / payment / violation).',
   })
   @ApiResponse({ status: 200, type: DriverProfileResponseDto })
   @Roles(AdminRole.SUPER_ADMIN, AdminRole.OPS_MANAGER)
@@ -87,7 +88,7 @@ export class AdminDriversController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: SuspendDriverDto,
   ): Promise<DriverProfileResponseDto> {
-    return this.service.suspend(id, dto.reason);
+    return this.service.suspend(id, dto.reason, dto.category);
   }
 
   @ApiOperation({ summary: 'Reinstate a suspended driver' })
