@@ -9,6 +9,7 @@ import { Brackets, QueryFailedError, Repository } from 'typeorm';
 import { I18nContext } from 'nestjs-i18n';
 import { Driver } from '../../drivers/driver.entity';
 import { DriverStatus } from '../../shared/enums/driver-status.enum';
+import { DriverSuspensionCategory } from '../../shared/enums/driver-suspension-category.enum';
 import { DriverTrip } from '../../driver-trips/entities/driver-trip.entity';
 import { DriverTripDeclineLog } from '../../driver-trips/entities/driver-trip-decline-log.entity';
 import { DriverTripStatus } from '../../shared/enums/driver-trip-status.enum';
@@ -181,6 +182,7 @@ export class AdminDriversService {
   async suspend(
     id: number,
     reason?: string,
+    category?: DriverSuspensionCategory,
   ): Promise<DriverProfileResponseDto> {
     const driver = await this.driversRepo.findOne({ where: { id } });
     if (!driver) {
@@ -199,6 +201,7 @@ export class AdminDriversService {
       refreshToken: null as unknown as string,
       suspendedAt: new Date(),
       suspensionReason: (reason ?? null) as unknown as string,
+      suspensionCategory: (category ?? null) as unknown as DriverSuspensionCategory,
     });
     const updated = await this.driversRepo.findOne({ where: { id } });
     return DriverProfileResponseDto.from(updated as Driver);
@@ -220,6 +223,7 @@ export class AdminDriversService {
       status: DriverStatus.INACTIVE,
       suspendedAt: null as unknown as Date,
       suspensionReason: null as unknown as string,
+      suspensionCategory: null as unknown as DriverSuspensionCategory,
     });
     const updated = await this.driversRepo.findOne({ where: { id } });
     return DriverProfileResponseDto.from(updated as Driver);

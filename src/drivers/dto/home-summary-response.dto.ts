@@ -8,6 +8,8 @@ import { DriverTripStopType } from '../../shared/enums/driver-trip-stop-type.enu
 import { DriverTripType } from '../../shared/enums/driver-trip-type.enum';
 import { StopPassengerRole } from '../../shared/enums/stop-passenger-status.enum';
 import { StopPackageRole } from '../../shared/enums/stop-package-status.enum';
+import { DriverSuspensionCategory } from '../../shared/enums/driver-suspension-category.enum';
+import { DriverDocumentType } from '../../shared/enums/driver-document-type.enum';
 
 export class LastTripSummaryDto {
   @ApiProperty({ example: 'Irbid' }) origin: string;
@@ -137,15 +139,92 @@ export class LastSessionDto {
 
 // ─── suspended block ────────────────────────────────────────
 
+export class ExpiredDocumentDto {
+  @ApiProperty({ enum: DriverDocumentType }) type: DriverDocumentType;
+  @ApiProperty({ type: 'string', format: 'date-time' }) expiresAt: Date;
+}
+
+export class SuspensionDocumentsInfoDto {
+  @ApiProperty({ type: [ExpiredDocumentDto] })
+  expiredDocuments: ExpiredDocumentDto[];
+}
+
+export class SuspensionRatingInfoDto {
+  @ApiProperty({ example: 3.9, description: "Driver's current lifetime rating." })
+  current: number;
+  @ApiProperty({ example: 4.0, description: 'Minimum rating configured by ops (env: DRIVER_MIN_RATING).' })
+  minimum: number;
+}
+
+export class SuspensionPaymentInfoDto {
+  @ApiProperty({ example: 18.5, description: 'Outstanding platform commission owed, in JOD.' })
+  outstandingBalance: number;
+}
+
+export class SuspensionReviewInfoDto {
+  @ApiProperty({
+    example: 1,
+    description: 'Env: DRIVER_REVIEW_MIN_DAYS. Lower bound on the review turnaround (business days).',
+  })
+  estimatedMinDays: number;
+  @ApiProperty({
+    example: 3,
+    description: 'Env: DRIVER_REVIEW_MAX_DAYS. Upper bound.',
+  })
+  estimatedMaxDays: number;
+  @ApiProperty({
+    example: true,
+    description: 'Whether the mobile "Submit Appeal" button should be enabled.',
+  })
+  appealAvailable: boolean;
+}
+
 export class SuspensionInfoDto {
   @ApiProperty({ type: 'string', format: 'date-time' })
   suspendedAt: Date;
-  @ApiProperty({ type: 'string', nullable: true, example: 'Fraudulent activity report' })
+
+  @ApiPropertyOptional({
+    enum: DriverSuspensionCategory,
+    description:
+      'Which suspended-state card the mobile Home tab should render. ' +
+      "`null` for legacy suspensions (mobile falls back to a generic card).",
+  })
+  category: DriverSuspensionCategory | null;
+
+  @ApiProperty({ type: 'string', nullable: true, example: 'Vehicle registration expired' })
   reason: string | null;
+
   @ApiProperty({ example: 'support@sarfees.com' })
   supportEmail: string;
   @ApiPropertyOptional({ nullable: true, example: '+96265000000' })
   supportPhone: string | null;
+
+  // Category-specific extras. Exactly one of these is non-null based on
+  // `category`; all are null when category is null (legacy suspension).
+
+  @ApiPropertyOptional({
+    type: SuspensionDocumentsInfoDto,
+    description: "Populated iff `category === 'documents'`.",
+  })
+  documentsInfo: SuspensionDocumentsInfoDto | null;
+
+  @ApiPropertyOptional({
+    type: SuspensionRatingInfoDto,
+    description: "Populated iff `category === 'rating'`.",
+  })
+  ratingInfo: SuspensionRatingInfoDto | null;
+
+  @ApiPropertyOptional({
+    type: SuspensionPaymentInfoDto,
+    description: "Populated iff `category === 'payment'`.",
+  })
+  paymentInfo: SuspensionPaymentInfoDto | null;
+
+  @ApiPropertyOptional({
+    type: SuspensionReviewInfoDto,
+    description: "Populated iff `category === 'violation'`.",
+  })
+  reviewInfo: SuspensionReviewInfoDto | null;
 }
 
 export class CurrentTripDto {

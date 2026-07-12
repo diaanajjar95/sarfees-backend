@@ -7,6 +7,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { DriverStatus } from '../shared/enums/driver-status.enum';
+import { DriverSuspensionCategory } from '../shared/enums/driver-suspension-category.enum';
 
 @Entity('drivers')
 @Unique('UQ_driver_phone_country', ['countryCode', 'phoneNumber'])
@@ -156,6 +157,14 @@ export class Driver {
   /** Optional reason string admin provides on suspend. Cleared on reinstate. */
   @Column({ type: 'text', nullable: true })
   suspensionReason: string;
+
+  /**
+   * Category bucket admin picks on suspend — drives the mobile suspended-state
+   * card variant (documents / rating / payment / violation). `null` for
+   * legacy suspensions predating this feature. Cleared on reinstate.
+   */
+  @Column({ type: 'enum', enum: DriverSuspensionCategory, nullable: true })
+  suspensionCategory: DriverSuspensionCategory;
 
   @CreateDateColumn()
   createdAt: Date;

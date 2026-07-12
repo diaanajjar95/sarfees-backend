@@ -246,22 +246,49 @@ this feature shipped).
 
 #### `suspensionInfo` (when `status === 'suspended'`)
 
-The lockout-state card. Includes the ops-provided reason (if any) and
-the support contact info the mobile UI needs to render the "Contact
-support" CTA.
+The lockout-state card. Ops picks one of four **categories** on
+suspend, and the response carries a category-specific sub-block plus
+the shared support contact info.
 
 ```ts
 suspensionInfo: {
   suspendedAt: Date,                 // = driver.suspendedAt, falls back to updatedAt
-  reason: string | null,             // = driver.suspensionReason
-  supportEmail: string,              // from SUPPORT_EMAIL env
-  supportPhone: string | null        // from SUPPORT_PHONE env
+  category:  'documents' | 'rating' | 'payment' | 'violation' | null,
+  reason:    string | null,          // = driver.suspensionReason
+  supportEmail:  string,             // env: SUPPORT_EMAIL
+  supportPhone:  string | null,      // env: SUPPORT_PHONE
+
+  // Exactly one non-null based on `category`; all null for legacy
+  // suspensions (category=null).
+  documentsInfo: { expiredDocuments: [{ type, expiresAt }] } | null,
+  ratingInfo:    { current, minimum } | null,
+  paymentInfo:   { outstandingBalance } | null,
+  reviewInfo:    { estimatedMinDays, estimatedMaxDays, appealAvailable } | null
 }
 ```
 
-Admin can suspend + reinstate via `POST /admin/drivers/:id/suspend`
-(body `{ reason?: string }`) and `POST /admin/drivers/:id/reinstate`.
-Reinstate clears both audit fields.
+Category → mobile screen mapping (matches the mocks):
+
+| category | Mobile card | Extra block |
+| --- | --- | --- |
+| `documents` | "DOCUMENTS NEED UPDATING" | `documentsInfo.expiredDocuments[]` — every `driver_documents` row where `expiresAt < now` |
+| `rating` | "SERVICE QUALITY REVIEW" | `ratingInfo.current` (from driver) + `.minimum` (env `DRIVER_MIN_RATING`, default 4.0) |
+| `payment` | "COMMISSION PAYMENT OVERDUE" | `paymentInfo.outstandingBalance` (from driver) |
+| `violation` | "POLICY VIOLATION REPORTED" | `reviewInfo.estimatedMin/MaxDays` (envs `DRIVER_REVIEW_MIN_DAYS` / `MAX_DAYS`, default 1/3) + `appealAvailable: true` |
+
+Admin flow:
+
+```
+POST /admin/drivers/:id/suspend
+  { "category": "documents", "reason": "Vehicle registration expired" }
+
+POST /admin/drivers/:id/reinstate
+  (no body — clears category, reason, suspendedAt)
+```
+
+Suspended drivers can reach `/drivers/home-summary` — that's how the
+mobile UI knows what to render. Every other driver endpoint continues
+to 403 through the standard suspend guard.
 
 ---
 

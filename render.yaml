@@ -89,6 +89,14 @@ services:
       - key: SUPPORT_EMAIL
         value: support@sarfees.com
 
+      # ─── Suspension policy thresholds (home-summary.suspensionInfo) ──
+      - key: DRIVER_MIN_RATING
+        value: "4.0"
+      - key: DRIVER_REVIEW_MIN_DAYS
+        value: "1"
+      - key: DRIVER_REVIEW_MAX_DAYS
+        value: "3"
+
       # ─── Runtime feature flags ───────────────────────────────────────
       - key: MAINTENANCE_MODE
         value: "false"
