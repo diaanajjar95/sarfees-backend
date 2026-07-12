@@ -91,7 +91,16 @@ export class DriversService {
 
   // ─── S-04 Home Summary ─────────────────────────────────────
   async getHomeSummary(driverId: number): Promise<HomeSummaryResponseDto> {
-    const driver = await this.requireDriver(driverId);
+    // Bypass the suspend gate in `requireDriver` — the whole point of the
+    // `suspensionInfo` block is to explain the lockout to the driver, so
+    // suspended drivers must be able to reach this endpoint. Every other
+    // driver endpoint continues to 403 through requireDriver().
+    const driver = await this.findById(driverId);
+    if (!driver) {
+      throw new NotFoundException(
+        I18nContext.current()?.t('driver.Not found'),
+      );
+    }
 
     // "Today" is evaluated in the Postgres session TZ — comparing
     // `DATE(t.completedAt)` against `CURRENT_DATE` keeps both sides on the
