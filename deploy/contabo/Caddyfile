@@ -1,0 +1,48 @@
+# Sarfees API — Caddy reverse proxy config
+#
+# Replace `api.sarfees.com` with your actual domain. Caddy will
+# automatically fetch a Let's Encrypt cert on first request.
+#
+# If you don't have a domain yet, use the `:80` block instead — see
+# the commented section at the bottom. That serves plain HTTP on port
+# 80 (accessed via the raw IP) so you can test end-to-end before DNS.
+
+api.sarfees.com {
+	# Encode responses (gzip for the mobile client's slower connections).
+	encode gzip
+
+	# Long request bodies for document uploads (10 MB cap enforced in
+	# the app; give Caddy some headroom).
+	request_body {
+		max_size 15MB
+	}
+
+	# Reverse proxy everything to the api container.
+	reverse_proxy api:3000 {
+		# Timeouts sized for the location-ping / long-poll endpoints.
+		transport http {
+			read_timeout 60s
+			write_timeout 60s
+		}
+	}
+
+	# Log access to /var/log/caddy/access.log (rotated automatically).
+	log {
+		output file /data/access.log {
+			roll_size 100MB
+			roll_keep 10
+		}
+	}
+}
+
+# ─── No-domain fallback (comment the block above and uncomment this) ─
+#
+# Use this while you're still setting up DNS. Caddy binds to port 80
+# and serves the app over plain HTTP. The mobile app can hit
+# http://<contabo-ip>/ directly. Swap to the TLS block above once the
+# domain resolves.
+#
+# :80 {
+# 	encode gzip
+# 	reverse_proxy api:3000
+# }

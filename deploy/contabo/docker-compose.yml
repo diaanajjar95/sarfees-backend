@@ -1,0 +1,87 @@
+# Sarfees API — Contabo production stack
+#
+# Services:
+#   postgres   Postgres 15 with a named volume for durability.
+#   api        NestJS backend built from the repo-root Dockerfile.
+#   caddy      Reverse proxy on :80/:443 with automatic Let's Encrypt.
+#
+# Bring the stack up with `docker compose up -d --build`.
+# See deploy/contabo/README.md for the full walkthrough.
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: sarfees-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Mount for pg_dump restore work — see 04-restore-db.sh
+      - ./backups:/backups:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${DB_USERNAME}", "-d", "${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sarfees-net
+
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: sarfees-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Service points at the postgres container over the internal
+      # docker network — no need for SSL between containers.
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      DB_SSL: "false"
+      NODE_ENV: production
+      PORT: "3000"
+      # All other config comes from .env (JWT secrets, thresholds,
+      # support contacts, app-init version fields, etc.)
+    env_file:
+      - .env
+    volumes:
+      # Persist uploaded driver documents + profile photos across
+      # redeploys. Ephemeral in-container storage would lose them.
+      - uploads_data:/app/uploads
+    networks:
+      - sarfees-net
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: sarfees-caddy
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - sarfees-net
+
+volumes:
+  postgres_data:
+  uploads_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  sarfees-net:
+    driver: bridge
