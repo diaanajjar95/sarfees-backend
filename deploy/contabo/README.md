@@ -29,9 +29,9 @@ For heavier load bump RAM before CPU.
 
 ## Prerequisites
 
-- [ ] Contabo VPS provisioned with Ubuntu 22.04 or 24.04
-- [ ] Root SSH access (Contabo emails the initial password)
-- [ ] An SSH public key added to `/root/.ssh/authorized_keys` on the VPS
+- [ ] Contabo VPS provisioned with Ubuntu 22.04 or 24.04 —
+      see [`00-CREATE-VPS.md`](00-CREATE-VPS.md) for the step-by-step
+- [ ] Root SSH access confirmed (key-based, password auth disabled)
 - [ ] Domain name (`api.sarfees.com`) with an A record pointing at the
       VPS IP — **optional for the initial cutover** (Caddyfile has a
       no-domain fallback), but required before you can serve production
@@ -41,15 +41,25 @@ For heavier load bump RAM before CPU.
 
 | Phase | Where | Est. |
 | --- | --- | --- |
+| 0. Provision the VPS | Contabo panel + your Mac | 15 min + Contabo provisioning wait |
 | 1. Back up Render DB | Local workstation | 5 min |
 | 2. First-time server setup | Contabo VPS | 10 min |
 | 3. Configure env + deploy | Contabo VPS | 5 min |
 | 4. Restore DB | Contabo VPS | 5–15 min |
 | 5. DNS cutover + TLS | Contabo VPS + registrar | 15 min |
 | 6. Mobile app base URL swap | App team | separate |
-| **Total** | | **~40 min** (+ DNS propagation) |
+| **Total** | | **~55 min** (+ Contabo provisioning + DNS propagation) |
 
 ---
+
+## Phase 0 — Provision the Contabo VPS
+
+Follow [`00-CREATE-VPS.md`](00-CREATE-VPS.md) end-to-end. That doc
+covers plan selection, ordering, SSH key setup, first login, hardening
+(disabling password auth), and DNS.
+
+Once you have a reachable IP + confirmed SSH key access, continue with
+Phase 1.
 
 ## Phase 1 — Back up the Render DB (do this first, on your Mac)
 
@@ -259,7 +269,8 @@ docker compose restart api
 
 ```
 deploy/contabo/
-├── README.md              this file
+├── README.md              this file — phase 1 onwards
+├── 00-CREATE-VPS.md       Contabo panel walkthrough (phase 0)
 ├── docker-compose.yml     postgres + api + caddy
 ├── .env.example           template for the local .env
 ├── Caddyfile              reverse proxy config (with no-domain fallback)
