@@ -1,0 +1,7 @@
+# Local state — do not commit
+.env
+.env.*
+!.env.example
+backups/
+*.dump
+*.sql.gz
