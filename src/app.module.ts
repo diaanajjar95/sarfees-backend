@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -24,6 +25,9 @@ import { AdminEarningsModule } from './admins/earnings/admin-earnings.module';
 import { AdminPassengerRequestsModule } from './admins/passenger-requests/admin-passenger-requests.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import { FaqModule } from './faq/faq.module';
+import { MapModule } from './shared/map/map.module';
+import { MatchingConfigModule } from './matching-config/matching-config.module';
+import { MatchingModule } from './matching/matching.module';
 import * as path from 'path';
 @Module({
   imports: [
@@ -38,6 +42,7 @@ import * as path from 'path';
     ConfigModule.forRoot({
       isGlobal: true, // Make ConfigModule available globally
     }),
+    ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
@@ -86,6 +91,9 @@ import * as path from 'path';
     AdminPassengerRequestsModule,
     AnnouncementsModule,
     FaqModule,
+    MapModule,
+    MatchingConfigModule,
+    MatchingModule,
   ],
   controllers: [AppController],
   providers: [AppService],
