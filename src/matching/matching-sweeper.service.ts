@@ -3,23 +3,22 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThanOrEqual, Repository } from 'typeorm';
+import { AssignmentService } from '../assignment/assignment.service';
 import { TripGroup } from '../grouping/entities/trip-group.entity';
 import { MatchingConfigService } from '../matching-config/matching-config.service';
 import { TripGroupStatus } from '../shared/enums/trip-group-status.enum';
 
 /**
- * Stage-1 sweeper (master spec §5.3). Every sweepIntervalSeconds:
- *   1. Freeze any OPEN group whose departure is within
- *      driverSearchLeadMinutes.
+ * Two responsibilities on each tick (master spec §5.3 + §9.3):
+ *   1. Freeze — OPEN groups whose departure is within
+ *      driverSearchLeadMinutes flip to FROZEN, and each frozen group
+ *      kicks off its Stage 2 cascade.
+ *   2. Timeout expired offers — TripOfferHistory rows still PENDING
+ *      past their expiresAt get treated as TIMEOUT and the next
+ *      candidate in the queue gets an offer.
  *
- * PR 3 will hook this to fire the driver cascade the moment a group
- * hits FROZEN. For now we just log the transition — Stage 2 doesn't
- * exist yet, so a frozen group waits for the old MatchingService
- * shadow path to have already assigned a driver individually.
- *
- * Scheduling detail: we register the cron dynamically at module init
- * so the interval comes from matching_config rather than a
- * compile-time constant.
+ * The cron interval is DB-driven (matching_config.sweepIntervalSeconds)
+ * so ops can dial it up or down via SQL without a redeploy.
  */
 @Injectable()
 export class MatchingSweeperService implements OnModuleInit {
@@ -30,6 +29,7 @@ export class MatchingSweeperService implements OnModuleInit {
     @InjectRepository(TripGroup)
     private readonly groupsRepo: Repository<TripGroup>,
     private readonly matchingConfigService: MatchingConfigService,
+    private readonly assignmentService: AssignmentService,
     private readonly scheduler: SchedulerRegistry,
   ) {}
 
@@ -48,32 +48,49 @@ export class MatchingSweeperService implements OnModuleInit {
 
   async tick(): Promise<void> {
     try {
-      const cfg = await this.matchingConfigService.getConfig();
-      const freezeCutoff = new Date(
-        Date.now() + cfg.driverSearchLeadMinutes * 60 * 1000,
-      );
-      const openGroups = await this.groupsRepo.find({
-        where: {
-          status: TripGroupStatus.OPEN,
-          departureTime: LessThanOrEqual(freezeCutoff),
-        },
-        take: 200,
-      });
-      if (openGroups.length === 0) return;
-
-      for (const group of openGroups) {
-        group.status = TripGroupStatus.FROZEN;
-        group.frozenAt = new Date();
-      }
-      await this.groupsRepo.save(openGroups);
-      this.logger.log(
-        `Froze ${openGroups.length} groups (departure ≤ ${freezeCutoff.toISOString()})`,
-      );
-      // PR 3 hook: fire cascade for each frozen group.
+      await this.freezeAndCascade();
+      await this.assignmentService.timeoutExpiredOffers();
     } catch (err) {
       this.logger.error(
         `Sweep tick failed: ${err instanceof Error ? err.message : String(err)}`,
       );
+    }
+  }
+
+  private async freezeAndCascade(): Promise<void> {
+    const cfg = await this.matchingConfigService.getConfig();
+    const freezeCutoff = new Date(
+      Date.now() + cfg.driverSearchLeadMinutes * 60 * 1000,
+    );
+    const openGroups = await this.groupsRepo.find({
+      where: {
+        status: TripGroupStatus.OPEN,
+        departureTime: LessThanOrEqual(freezeCutoff),
+      },
+      take: 100,
+    });
+    if (openGroups.length === 0) return;
+
+    for (const group of openGroups) {
+      group.status = TripGroupStatus.FROZEN;
+      group.frozenAt = new Date();
+    }
+    await this.groupsRepo.save(openGroups);
+    this.logger.log(
+      `Froze ${openGroups.length} groups (departure ≤ ${freezeCutoff.toISOString()})`,
+    );
+
+    // Fire the cascade for each newly-frozen group. Failures are logged
+    // but don't stop the sweep; the group stays FROZEN and the next tick
+    // will retry via a startCascade on FROZEN.
+    for (const group of openGroups) {
+      try {
+        await this.assignmentService.startCascade(group.id);
+      } catch (err) {
+        this.logger.error(
+          `startCascade failed for group #${group.id}: ${err instanceof Error ? err.message : err}`,
+        );
+      }
     }
   }
 }

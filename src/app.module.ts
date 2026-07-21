@@ -29,6 +29,8 @@ import { MapModule } from './shared/map/map.module';
 import { MatchingConfigModule } from './matching-config/matching-config.module';
 import { MatchingModule } from './matching/matching.module';
 import { GroupingModule } from './grouping/grouping.module';
+import { AssignmentModule } from './assignment/assignment.module';
+import { AdminEscalationsModule } from './admins/escalations/admin-escalations.module';
 import * as path from 'path';
 @Module({
   imports: [
@@ -95,7 +97,9 @@ import * as path from 'path';
     MapModule,
     MatchingConfigModule,
     GroupingModule,
+    AssignmentModule,
     MatchingModule,
+    AdminEscalationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

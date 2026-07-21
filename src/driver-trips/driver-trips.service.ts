@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -64,6 +65,8 @@ import { DriverNotificationsService } from '../notifications/driver-notification
 import { DriverNotificationType } from '../shared/enums/driver-notification-type.enum';
 import { PassengerNotificationsService } from '../notifications/passenger/passenger-notifications.service';
 import { PassengerNotificationType } from '../shared/enums/passenger-notification-type.enum';
+import { AssignmentService } from '../assignment/assignment.service';
+import { Inject, forwardRef } from '@nestjs/common';
 
 const DEFAULT_OFFER_SECONDS = 45;
 const DEFAULT_COMMISSION_RATE = 0.15;
@@ -71,6 +74,8 @@ const ESTIMATED_MINUTES_PER_STOP = 35;
 
 @Injectable()
 export class DriverTripsService {
+  private readonly logger = new Logger(DriverTripsService.name);
+
   constructor(
     @InjectRepository(DriverTrip)
     private readonly tripsRepo: Repository<DriverTrip>,
@@ -91,6 +96,8 @@ export class DriverTripsService {
     private readonly dataSource: DataSource,
     private readonly notifications: DriverNotificationsService,
     private readonly passengerNotifications: PassengerNotificationsService,
+    @Inject(forwardRef(() => AssignmentService))
+    private readonly assignmentService: AssignmentService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════
@@ -242,6 +249,17 @@ export class DriverTripsService {
       payload: { tripId: trip.id },
     });
 
+    // Feed the Stage-2 cascade so a group-linked trip transitions
+    // TripGroup → ASSIGNED and any parallel broadcast offers are
+    // superseded. Legacy trips (no offer_history row) are a no-op.
+    try {
+      await this.assignmentService.handleAcceptance(trip.id);
+    } catch (err) {
+      this.logger.warn(
+        `AssignmentService.handleAcceptance failed for trip #${trip.id}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+
     return manifest;
   }
 
@@ -271,6 +289,17 @@ export class DriverTripsService {
         autoDeclined: false,
       }),
     );
+
+    // Feed the Stage-2 cascade — records the DECLINE on the offer
+    // history row and offers to the next candidate. Legacy trips
+    // (no offer_history row) are a no-op.
+    try {
+      await this.assignmentService.handleDecline(trip.id);
+    } catch (err) {
+      this.logger.warn(
+        `AssignmentService.handleDecline failed for trip #${trip.id}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
 
     return { message: 'Declined' };
   }
