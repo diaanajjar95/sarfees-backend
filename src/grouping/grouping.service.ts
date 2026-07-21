@@ -1,0 +1,337 @@
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Between, DataSource, EntityManager, Repository } from 'typeorm';
+import { MatchingConfigService } from '../matching-config/matching-config.service';
+import { MAP_PROVIDER } from '../shared/map/map-provider.interface';
+import type {
+  LatLng,
+  MapProvider,
+} from '../shared/map/map-provider.interface';
+import { TripGroupStatus } from '../shared/enums/trip-group-status.enum';
+import { TripRequest } from '../trips/entities/trip-request.entity';
+import { User } from '../users/user.entity';
+import {
+  CandidateStop,
+  checkDetourBound,
+  checkGender,
+  checkGeography,
+  checkWaitTolerance,
+  computeActualPickupTimes,
+  GroupMemberStop,
+  orderPickupsByGateDistance,
+} from './compatibility';
+import { TripGroup } from './entities/trip-group.entity';
+
+/**
+ * Stage-1 grouping engine (master spec §5). Called from
+ * TripsService.createRequest (and PackagesService.createDelivery in
+ * PR 5) for every new passenger/package request.
+ *
+ * PR 2 ships shadow-mode: TripGroups are populated in the DB but
+ * the existing MatchingService.attemptMatch keeps running so no
+ * driver-assignment behavior changes. PR 3 will drop the old matcher
+ * and hand groups to the cascade.
+ */
+@Injectable()
+export class GroupingService {
+  private readonly logger = new Logger(GroupingService.name);
+
+  constructor(
+    @InjectRepository(TripGroup)
+    private readonly groupsRepo: Repository<TripGroup>,
+    @InjectRepository(TripRequest)
+    private readonly requestsRepo: Repository<TripRequest>,
+    private readonly matchingConfigService: MatchingConfigService,
+    private readonly dataSource: DataSource,
+    @Inject(MAP_PROVIDER) private readonly mapProvider: MapProvider,
+  ) {}
+
+  /**
+   * Assign a passenger TripRequest to a group. Called after the
+   * request is saved. Returns the group it landed in — either an
+   * existing OPEN group or a freshly-created one.
+   *
+   * The advisory lock keyed on (origin, dest, 5-min window) prevents
+   * the master-spec §10 "two simultaneous compatible requests" race
+   * — the lock waits, second request sees the first's group, joins
+   * it if compatible.
+   */
+  async attemptGroupingForTripRequest(
+    tripRequestId: number,
+  ): Promise<TripGroup | null> {
+    return this.dataSource.transaction(async (mgr) => {
+      const request = await mgr.findOne(TripRequest, {
+        where: { id: tripRequestId },
+        relations: ['departureCity', 'arrivalCity', 'passenger'],
+      });
+      if (!request) {
+        this.logger.warn(
+          `TripRequest #${tripRequestId} vanished before grouping`,
+        );
+        return null;
+      }
+      if (!request.travelDate) {
+        this.logger.warn(
+          `TripRequest #${tripRequestId} has no travelDate — cannot group`,
+        );
+        return null;
+      }
+      const originCity = request.departureCity;
+      const destCity = request.arrivalCity;
+      if (!originCity || !destCity) {
+        this.logger.warn(
+          `TripRequest #${tripRequestId} missing origin/dest city refs`,
+        );
+        return null;
+      }
+
+      await this.takeCorridorLock(
+        mgr,
+        originCity.id,
+        destCity.id,
+        request.travelDate,
+      );
+
+      const cfg = await this.matchingConfigService.getConfig();
+      const candidate: CandidateStop = {
+        ownerId: request.id,
+        pickup: request.departureLocation,
+        dropoff: request.arrivalLocation,
+        requestedPickupTime: request.travelDate,
+      };
+
+      // Geography is the cheap gate — reject fast.
+      const geo = checkGeography(candidate, originCity, destCity, cfg);
+      if (!geo.ok) {
+        this.logger.log(
+          `TripRequest #${tripRequestId} rejected at geography: ${geo.reason}`,
+        );
+        // Fall through to a solo group — spec §1: "every passenger who
+        // requests a trip gets served". Outside-service-area is a DTO
+        // reject upstream; if we get here the request is at the edge but
+        // still inside a wider radius, so we let it start its own group.
+      }
+
+      const candidates = await this.findCandidateGroups(
+        mgr,
+        originCity.id,
+        destCity.id,
+        request.travelDate,
+        cfg.passengerWaitToleranceMinutes,
+      );
+
+      for (const group of candidates) {
+        const verdict = await this.evaluateInsertion(
+          mgr,
+          group,
+          request,
+          originCity,
+          destCity,
+          cfg.detourBoundPercent,
+          cfg.passengerWaitToleranceMinutes,
+          cfg.handlingSecondsPerPackageStop,
+        );
+        if (verdict.ok) {
+          request.tripGroup = group;
+          await mgr.save(request);
+          this.logger.log(
+            `TripRequest #${tripRequestId} joined TripGroup #${group.id}`,
+          );
+          return group;
+        }
+        this.logger.debug(
+          `TripRequest #${tripRequestId} rejected from TripGroup #${group.id}: ${verdict.reason}`,
+        );
+      }
+
+      // No compatible group — create a new one.
+      const group = await this.createGroup(mgr, request, originCity, destCity);
+      request.tripGroup = group;
+      await mgr.save(request);
+      this.logger.log(
+        `TripRequest #${tripRequestId} started new TripGroup #${group.id}`,
+      );
+      return group;
+    });
+  }
+
+  // ─── Internals ─────────────────────────────────────────────
+
+  /**
+   * pg_advisory_xact_lock(int4, int4) is released when the txn commits.
+   * The first int is the corridor key (origin*100000 + dest), the second
+   * is a 5-minute window index counted from the epoch.
+   */
+  private async takeCorridorLock(
+    mgr: EntityManager,
+    originCityId: number,
+    destCityId: number,
+    departureTime: Date,
+  ): Promise<void> {
+    const corridorKey = originCityId * 100_000 + destCityId;
+    const windowIdx = Math.floor(departureTime.getTime() / (5 * 60 * 1000));
+    // Postgres int4 is signed 32-bit — window index over ~40k years fits.
+    await mgr.query('SELECT pg_advisory_xact_lock($1::int4, $2::int4)', [
+      corridorKey,
+      windowIdx,
+    ]);
+  }
+
+  /**
+   * OPEN groups on the same corridor whose departureTime falls within
+   * the candidate's wait-tolerance window on either side. Ordered by
+   * soonest departure — the caller stops at the first acceptor.
+   */
+  private async findCandidateGroups(
+    mgr: EntityManager,
+    originCityId: number,
+    destCityId: number,
+    candidateDeparture: Date,
+    toleranceMinutes: number,
+  ): Promise<TripGroup[]> {
+    const from = new Date(
+      candidateDeparture.getTime() - toleranceMinutes * 60 * 1000,
+    );
+    const to = new Date(
+      candidateDeparture.getTime() + toleranceMinutes * 60 * 1000,
+    );
+    return mgr.find(TripGroup, {
+      where: {
+        status: TripGroupStatus.OPEN,
+        originCity: { id: originCityId },
+        destCity: { id: destCityId },
+        departureTime: Between(from, to),
+      },
+      order: { departureTime: 'ASC' },
+    });
+  }
+
+  /**
+   * Runs the full compatibility gauntlet: gender → geography (already
+   * done for the candidate; also check nothing about the group breaks)
+   * → gate-distance ordering → time feasibility → wait tolerance →
+   * detour bound.
+   */
+  private async evaluateInsertion(
+    mgr: EntityManager,
+    group: TripGroup,
+    candidate: TripRequest,
+    origin: (typeof group)['originCity'],
+    dest: (typeof group)['destCity'],
+    detourBoundPercent: number,
+    toleranceMinutes: number,
+    handlingSecondsPerPackage: number,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    // Gender rule (cheapest hard-fail after geography).
+    const passenger = await mgr.findOne(User, {
+      where: { id: candidate.passenger.id },
+    });
+    const genderVerdict = checkGender(
+      group.womenOnly,
+      candidate.isFemaleOnly,
+      passenger?.gender ?? 'unspecified',
+    );
+    if (!genderVerdict.ok) return genderVerdict;
+
+    // Full-car and urgent groups are born frozen — never accept
+    // insertions after creation (§8, §6.6).
+    if (group.fullCar) return { ok: false, reason: 'group_is_full_car' };
+    if (group.urgent) return { ok: false, reason: 'group_is_urgent' };
+
+    // Existing members + candidate → ordered pickup sequence.
+    const existingRequests = await mgr.find(TripRequest, {
+      where: { tripGroup: { id: group.id } },
+    });
+    const existingStops: GroupMemberStop[] = existingRequests.map((r) => ({
+      ownerId: r.id,
+      pickup: r.departureLocation,
+      dropoff: r.arrivalLocation,
+      requestedPickupTime: r.travelDate,
+    }));
+    const candidateStop: GroupMemberStop = {
+      ownerId: candidate.id,
+      pickup: candidate.departureLocation,
+      dropoff: candidate.arrivalLocation,
+      requestedPickupTime: candidate.travelDate,
+    };
+    const withCandidate = [...existingStops, candidateStop];
+
+    if (!origin.exitGateLat || !origin.exitGateLng)
+      return { ok: false, reason: 'origin_missing_exit_gate' };
+    const originGate: LatLng = {
+      lat: Number(origin.exitGateLat),
+      lng: Number(origin.exitGateLng),
+    };
+    const orderedWith = orderPickupsByGateDistance(withCandidate, originGate);
+
+    // Time feasibility (drives wait-tolerance check next).
+    const packagesPerStop = new Map<number, number>(); // PR 5 fills this
+    const feas = await computeActualPickupTimes(
+      this.mapProvider,
+      orderedWith,
+      packagesPerStop,
+      handlingSecondsPerPackage,
+    );
+    if (!feas.ok) return { ok: false, reason: feas.reason };
+
+    // Wait tolerance across all members including the newcomer.
+    const requestedTimes = new Map<number, Date>(
+      orderedWith.map((s) => [s.ownerId, s.requestedPickupTime]),
+    );
+    const wt = checkWaitTolerance(
+      feas.actualByOwner,
+      requestedTimes,
+      toleranceMinutes,
+    );
+    if (!wt.ok) return wt;
+
+    // Detour bound: compare "without candidate" vs "with candidate"
+    // total route lengths. Route = ordered pickups then ordered dropoffs.
+    const orderedWithout = orderPickupsByGateDistance(existingStops, originGate);
+    const baselineRoute = this.stopsToRouteCoords(orderedWithout);
+    const withRoute = this.stopsToRouteCoords(orderedWith);
+    const detour = await checkDetourBound(
+      this.mapProvider,
+      baselineRoute,
+      withRoute,
+      detourBoundPercent,
+    );
+    if (!detour.ok) return detour;
+
+    return { ok: true };
+  }
+
+  private stopsToRouteCoords(stops: GroupMemberStop[]): LatLng[] {
+    if (stops.length === 0) return [];
+    // Pickups in gate-distance order, then dropoffs in the same order.
+    // Master spec §6.3 flips this to packages-first when we ship
+    // packages in PR 5; passenger-only route below is the passenger
+    // baseline.
+    return [
+      ...stops.map((s) => s.pickup),
+      ...stops.map((s) => s.dropoff),
+    ];
+  }
+
+  private async createGroup(
+    mgr: EntityManager,
+    request: TripRequest,
+    originCity: TripGroup['originCity'],
+    destCity: TripGroup['destCity'],
+  ): Promise<TripGroup> {
+    const group = new TripGroup();
+    group.originCity = originCity;
+    group.destCity = destCity;
+    group.departureTime = request.travelDate;
+    group.status = TripGroupStatus.OPEN;
+    group.womenOnly = request.isFemaleOnly;
+    group.fullCar = false;
+    group.urgent = false;
+    group.assignedDriver = null;
+    group.driverTripId = null;
+    group.frozenAt = null;
+    group.assignedAt = null;
+    group.completedAt = null;
+    return mgr.save(group);
+  }
+}
