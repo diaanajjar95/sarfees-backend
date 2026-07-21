@@ -72,6 +72,21 @@ const DEFAULT_OFFER_SECONDS = 45;
 const DEFAULT_COMMISSION_RATE = 0.15;
 const ESTIMATED_MINUTES_PER_STOP = 35;
 
+/**
+ * Returns "tomorrow at 00:00 local time" as a UTC Date. Used by the
+ * going-home auto-offline lock (§9.6). The boundary is
+ * matching_config.goingHomeDayBoundaryHourLocal — 0 by default;
+ * ops can shift to e.g. 4am if drivers hit "going home" at 11pm
+ * and would rather be re-eligible sooner.
+ */
+function nextLocalMidnight(): Date {
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 0, 0, 0);
+  return tomorrow;
+}
+
 @Injectable()
 export class DriverTripsService {
   private readonly logger = new Logger(DriverTripsService.name);
@@ -975,6 +990,19 @@ export class DriverTripsService {
       // and accumulates the platform's commission as outstanding balance.
       const driver = await mgr.findOne(Driver, { where: { id: driverId } });
       if (driver) {
+        // Going-home auto-offline (master spec §9.6): if the driver was
+        // in going-home mode and this trip's destination matches their
+        // home city, they get locked offline until the configured day
+        // boundary (default: local midnight).
+        const goingHomeCompleted =
+          driver.prefGoingHome &&
+          driver.homeCity != null &&
+          (driver.homeCity ?? '').toLowerCase() ===
+            (trip.destinationCity ?? '').toLowerCase();
+        if (goingHomeCompleted) {
+          driver.goingHomeOfflineUntil = nextLocalMidnight();
+        }
+
         driver.status = DriverStatus.INACTIVE;
         driver.totalTrips = (driver.totalTrips ?? 0) + 1;
         driver.outstandingBalance =
@@ -1173,6 +1201,17 @@ export class DriverTripsService {
         'ألغى السائق الرحلة التي تحمل طردك. سنعيد تعيينه قريبًا.',
       payload: { tripId: trip.id, zone },
     });
+
+    // Restart the cascade for the linked TripGroup so a new driver
+    // gets offered the trip. Legacy trips (no offer_history row) are
+    // a no-op.
+    try {
+      await this.assignmentService.handleDriverCancel(trip.id);
+    } catch (err) {
+      this.logger.warn(
+        `AssignmentService.handleDriverCancel failed for trip #${trip.id}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
 
     return txnResult;
   }
