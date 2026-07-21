@@ -15,4 +15,10 @@ export enum OfferResponse {
   DECLINE = 'decline',
   TIMEOUT = 'timeout',
   SUPERSEDED = 'superseded',
+  /**
+   * Driver accepted then cancelled before pickup (§10). Counted as
+   * a decline for penalty purposes (driverCancelPenalty ≥ decline).
+   * Preserved as a distinct outcome so ops audits can tell the two apart.
+   */
+  CANCEL_AFTER_ACCEPT = 'cancel_after_accept',
 }

@@ -612,6 +612,18 @@ export class DriversService {
       );
     }
 
+    // Master spec §9.6 — going-home auto-offline blocks re-activation
+    // until the configured day boundary (default: local midnight).
+    if (
+      driver.goingHomeOfflineUntil &&
+      driver.goingHomeOfflineUntil.getTime() > Date.now()
+    ) {
+      const readyAt = driver.goingHomeOfflineUntil.toISOString();
+      throw new ForbiddenException(
+        `You went home for the day — you can go online again at ${readyAt}.`,
+      );
+    }
+
     this.guardWomenOnly(driver, dto.tripTypes);
 
     const destinationCity = dto.goingHome
@@ -638,6 +650,9 @@ export class DriversService {
       // the driver is mid-session.
       lastSessionStartedAt: now,
       lastSessionEndedAt: null as unknown as Date,
+      // Fresh session — clear the going-home lock (if any) so future
+      // going-home flows start from a clean slate.
+      goingHomeOfflineUntil: null,
     };
     if (dto.currentLocationLat != null) {
       patch.prefLocationLat = dto.currentLocationLat;

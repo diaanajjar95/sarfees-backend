@@ -5,6 +5,7 @@ import { TripRequest } from './entities/trip-request.entity';
 import { Driver } from '../drivers/driver.entity';
 import { DriverLocation } from './entities/driver-location.entity';
 import { GroupingService } from '../grouping/grouping.service';
+import { AssignmentService } from '../assignment/assignment.service';
 import { PackageDelivery } from '../packages/entities/package-delivery.entity';
 import { PackageStatus } from '../shared/enums/package-status.enum';
 import { TripStatus } from '../shared/enums/trip-status.enum';
@@ -81,6 +82,7 @@ export class TripsService {
     private packagesRepository: Repository<PackageDelivery>,
 
     private readonly groupingService: GroupingService,
+    private readonly assignmentService: AssignmentService,
   ) {}
 
   // ─── Existing endpoints ────────────────────────────────────
@@ -431,6 +433,17 @@ export class TripsService {
     }
 
     await this.tripsRepository.save(trip);
+
+    // Feed the Stage-1 matcher when a passenger cancels so their
+    // group can update (§10). Failure MUST NOT flip the status back
+    // — the request is already CANCELLED at the DB.
+    if (dto.status === TripStatus.CANCELLED) {
+      try {
+        await this.assignmentService.handlePassengerCancel(tripId);
+      } catch (err) {
+        void err;
+      }
+    }
 
     return {
       message: I18nContext.current()?.t('trips.Status updated') || 'Trip status updated',

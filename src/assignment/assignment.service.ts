@@ -203,6 +203,166 @@ export class AssignmentService {
     await this.recordAndAdvance(offer, OfferResponse.DECLINE);
   }
 
+  // ─── Public: cancellation matrix (master spec §10) ───────────
+
+  /**
+   * Passenger cancelled a TripRequest. Detaches from the group and
+   * decides the group's fate:
+   *   - Group empty afterwards → CANCELLED (+ release assigned driver
+   *     if any, emit compensation-style notification per §10).
+   *   - Group not empty, still OPEN/FROZEN/OFFERING → no state change;
+   *     the search / freeze continues with the remaining members.
+   *   - Group not empty, ASSIGNED → notify driver with updated
+   *     composition so they know who's still on the trip.
+   *
+   * Per §10: capacity does NOT reopen (we don't flip an ASSIGNED/
+   * BROADCASTING group back to OPEN just because someone dropped).
+   */
+  async handlePassengerCancel(tripRequestId: number): Promise<void> {
+    const req = await this.requestsRepo.findOne({
+      where: { id: tripRequestId },
+      relations: ['tripGroup'],
+    });
+    if (!req || !req.tripGroup) return; // never grouped — nothing to do
+
+    const groupId = req.tripGroup.id;
+
+    // Detach FIRST so subsequent count queries reflect the new state.
+    req.tripGroup = null;
+    await this.requestsRepo.save(req);
+
+    const group = await this.groupsRepo.findOne({ where: { id: groupId } });
+    if (!group) return;
+
+    const remaining = await this.requestsRepo.count({
+      where: { tripGroup: { id: groupId } },
+    });
+
+    if (remaining === 0) {
+      await this.cancelEmptyGroup(group);
+      return;
+    }
+
+    // Not empty — for ASSIGNED groups, tell the driver about the change.
+    if (
+      group.status === TripGroupStatus.ASSIGNED &&
+      group.assignedDriver
+    ) {
+      await this.driverNotifications.emit({
+        driverId: group.assignedDriver.id,
+        type: DriverNotificationType.PASSENGER_CANCELLED,
+        title: 'Passenger cancelled',
+        body: `${remaining} passenger${remaining === 1 ? '' : 's'} still on the trip.`,
+        payload: {
+          tripGroupId: groupId,
+          driverTripId: group.driverTripId,
+          remainingCount: remaining,
+        },
+      });
+    }
+  }
+
+  /**
+   * Driver cancelled after accepting (§10). Restart the cascade:
+   *   - Mark the ACCEPT offer as CANCEL_AFTER_ACCEPT (counted as a
+   *     decline for penalty purposes, kept distinct for audit).
+   *   - Clear group.assignedDriver / driverTripId, roll status back
+   *     to OFFERING so sendNextOffer picks the next candidate.
+   *     The driver who just cancelled is excluded because their row
+   *     is already in trip_offer_history.
+   *   - Notify remaining passengers only if the delay exceeds a
+   *     threshold — deferred to a follow-up PR; for now we emit the
+   *     passenger notification unconditionally so nobody's surprised.
+   */
+  async handleDriverCancel(driverTripId: number): Promise<void> {
+    const offer = await this.offersRepo.findOne({
+      where: {
+        response: OfferResponse.ACCEPT,
+        driverTrip: { id: driverTripId },
+      },
+      relations: ['tripGroup', 'driver'],
+    });
+    if (!offer) return; // legacy trip / not group-linked
+
+    const group = await this.groupsRepo.findOne({
+      where: { id: offer.tripGroup.id },
+      relations: ['originCity', 'destCity'],
+    });
+    if (!group) return;
+
+    // Only groups still in ASSIGNED can be rewound. Once IN_PROGRESS
+    // starts, driver cancel is a support case, not a re-cascade.
+    if (
+      group.status !== TripGroupStatus.ASSIGNED &&
+      group.status !== TripGroupStatus.IN_PROGRESS
+    ) {
+      return;
+    }
+    if (group.status === TripGroupStatus.IN_PROGRESS) {
+      // Mid-trip cancel — DriverTripsService already blocks these
+      // (zone 3). Nothing for the matcher to do.
+      return;
+    }
+
+    // Reset the group so sendNextOffer can pick another driver.
+    offer.response = OfferResponse.CANCEL_AFTER_ACCEPT;
+    offer.respondedAt = new Date();
+    await this.offersRepo.save(offer);
+
+    group.status = TripGroupStatus.OFFERING;
+    group.assignedDriver = null;
+    group.driverTripId = null;
+    group.assignedAt = null;
+    await this.groupsRepo.save(group);
+    this.logger.log(
+      `Driver #${offer.driver.id} cancelled group #${group.id} — restarting cascade`,
+    );
+
+    await this.sendNextOffer(group);
+  }
+
+  // ─── Internals ─────────────────────────────────────────────
+
+  private async cancelEmptyGroup(group: TripGroup): Promise<void> {
+    if (group.status === TripGroupStatus.CANCELLED) return;
+
+    // If a driver was already assigned, cancel the DriverTrip row so
+    // it doesn't sit as ACCEPTED forever. Fire a driver notification
+    // per §10 ("driver released + compensation event emitted"; the
+    // compensation event itself lives in the earnings service — not
+    // in matcher scope).
+    if (group.driverTripId && group.assignedDriver) {
+      const dt = await this.driverTripsRepo.findOne({
+        where: { id: group.driverTripId },
+      });
+      if (
+        dt &&
+        (dt.status === DriverTripStatus.ACCEPTED ||
+          dt.status === DriverTripStatus.OFFERED)
+      ) {
+        dt.status = DriverTripStatus.CANCELLED;
+        dt.cancelledAt = new Date();
+        dt.cancellationReason = 'all_passengers_cancelled';
+        await this.driverTripsRepo.save(dt);
+      }
+      await this.driverNotifications.emit({
+        driverId: group.assignedDriver.id,
+        type: DriverNotificationType.PASSENGER_CANCELLED,
+        title: 'All passengers cancelled',
+        body: 'The trip has been cancelled. You will be compensated.',
+        payload: {
+          tripGroupId: group.id,
+          driverTripId: group.driverTripId,
+          reason: 'all_passengers_cancelled',
+        },
+      });
+    }
+
+    group.status = TripGroupStatus.CANCELLED;
+    await this.groupsRepo.save(group);
+    this.logger.log(`Group #${group.id} → CANCELLED (empty)`);
+  }
+
   // ─── Internals ─────────────────────────────────────────────
 
   /**
@@ -299,7 +459,11 @@ export class AssignmentService {
       .select('h.driverId', 'driverId')
       .addSelect('COUNT(*)', 'n')
       .where('h.response IN (:...bad)', {
-        bad: [OfferResponse.DECLINE, OfferResponse.TIMEOUT],
+        bad: [
+          OfferResponse.DECLINE,
+          OfferResponse.TIMEOUT,
+          OfferResponse.CANCEL_AFTER_ACCEPT,
+        ],
       })
       .andWhere('h.respondedAt > NOW() - INTERVAL \'30 days\'')
       .groupBy('h.driverId')

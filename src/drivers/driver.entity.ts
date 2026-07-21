@@ -107,6 +107,15 @@ export class Driver {
   @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
   prefLocationLng: number;
 
+  /**
+   * Set when a going-home trip completes (master spec §9.6). Blocks
+   * `POST /drivers/activate` until this moment has passed. Reset to
+   * null by the going-home wake-up cron on the configured day
+   * boundary (defaults to local midnight).
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  goingHomeOfflineUntil: Date | null;
+
   // ─── Auth ───────────────────────────────────────────────────
   @Column({ default: false })
   hasVerifiedOtpBefore: boolean;
