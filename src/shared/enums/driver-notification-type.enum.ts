@@ -6,6 +6,10 @@ export enum DriverNotificationType {
   EARNINGS_RECORDED = 'earnings_recorded',
   OUTSTANDING_BALANCE = 'outstanding_balance',
   SYSTEM_ANNOUNCEMENT = 'system_announcement',
+  /** Cascade or broadcast offer waiting for the driver's response (§9.3). */
+  OFFER_RECEIVED = 'offer_received',
+  /** Broadcast lost — another driver accepted first (§9.4 race rule). */
+  OFFER_NO_LONGER_AVAILABLE = 'offer_no_longer_available',
 }
 
 export enum DriverNotificationCategory {
@@ -30,4 +34,7 @@ export const NOTIFICATION_CATEGORY: Record<
     DriverNotificationCategory.EARNINGS,
   [DriverNotificationType.SYSTEM_ANNOUNCEMENT]:
     DriverNotificationCategory.SYSTEM,
+  [DriverNotificationType.OFFER_RECEIVED]: DriverNotificationCategory.TRIPS,
+  [DriverNotificationType.OFFER_NO_LONGER_AVAILABLE]:
+    DriverNotificationCategory.TRIPS,
 };

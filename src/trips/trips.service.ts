@@ -4,7 +4,6 @@ import { In, Repository } from 'typeorm';
 import { TripRequest } from './entities/trip-request.entity';
 import { Driver } from '../drivers/driver.entity';
 import { DriverLocation } from './entities/driver-location.entity';
-import { MatchingService } from '../matching/matching.service';
 import { GroupingService } from '../grouping/grouping.service';
 import { PackageDelivery } from '../packages/entities/package-delivery.entity';
 import { PackageStatus } from '../shared/enums/package-status.enum';
@@ -81,7 +80,6 @@ export class TripsService {
     @InjectRepository(PackageDelivery)
     private packagesRepository: Repository<PackageDelivery>,
 
-    private readonly matchingService: MatchingService,
     private readonly groupingService: GroupingService,
   ) {}
 
@@ -139,30 +137,13 @@ export class TripsService {
 
     const saved = await this.tripsRepository.save(trip);
 
-    // Stage-1 grouping (shadow mode until PR 3 replaces the old matcher).
-    // Failures MUST NOT roll back the passenger's request — we log and
-    // let the legacy path still assign a driver.
+    // Stage-1 grouping. Failure MUST NOT roll back the passenger's
+    // request — it stays PENDING and the next sweeper tick will
+    // retry via re-grouping (planned for PR 4).
     try {
       await this.groupingService.attemptGroupingForTripRequest(saved.id);
     } catch (err) {
       // Logged inside GroupingService.
-      void err;
-    }
-
-    // Legacy auto-match: keeps assigning individual drivers until PR 3
-    // ships the ranked cascade + broadcast. Once cascade is live, this
-    // block is deleted along with the old MatchingService.
-    try {
-      const reloaded = await this.tripsRepository.findOne({
-        where: { id: saved.id },
-        relations: ['departureCity', 'arrivalCity'],
-      });
-      if (reloaded) {
-        await this.matchingService.attemptMatch(reloaded);
-      }
-    } catch (err) {
-      // Logged inside MatchingService; swallow here to keep createRequest's
-      // public contract unchanged.
       void err;
     }
 
