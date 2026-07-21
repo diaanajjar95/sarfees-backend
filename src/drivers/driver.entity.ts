@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { DriverStatus } from '../shared/enums/driver-status.enum';
 import { DriverSuspensionCategory } from '../shared/enums/driver-suspension-category.enum';
+import { VehicleClass } from '../shared/enums/vehicle-class.enum';
 
 @Entity('drivers')
 @Unique('UQ_driver_phone_country', ['countryCode', 'phoneNumber'])
@@ -63,6 +64,13 @@ export class Driver {
 
   @Column({ default: 4 })
   passengerCapacity: number;
+
+  @Column({
+    type: 'enum',
+    enum: VehicleClass,
+    nullable: true,
+  })
+  vehicleClass: VehicleClass | null;
 
   // ─── Reputation & Metrics ───────────────────────────────────
   @Column({ type: 'decimal', precision: 3, scale: 2, default: 5.0 })

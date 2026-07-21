@@ -1,10 +1,13 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { MAP_PROVIDER } from '../shared/map/map-provider.interface';
+import type { MapProvider } from '../shared/map/map-provider.interface';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   And,
@@ -52,8 +55,6 @@ import {
 } from './dto/location-ping.dto';
 import { AnnouncementsService } from '../announcements/announcements.service';
 
-/** Average city speed used for ETA estimation in /drivers/home-summary. */
-const ETA_AVG_KMH = 40;
 
 @Injectable()
 export class DriversService {
@@ -74,6 +75,7 @@ export class DriversService {
     private readonly driverDocumentsRepository: Repository<DriverDocument>,
     private readonly announcementsService: AnnouncementsService,
     private readonly configService: ConfigService,
+    @Inject(MAP_PROVIDER) private readonly mapProvider: MapProvider,
   ) {}
 
   // ─── Lookups (used by auth slice) ──────────────────────────
@@ -269,6 +271,23 @@ export class DriversService {
       (s) => s.order === trip.currentStopIndex + 1,
     );
 
+    const currentStopEta = currentStopRow
+      ? await this.etaMinutesTo(
+          driverLat,
+          driverLng,
+          Number(currentStopRow.lat),
+          Number(currentStopRow.lng),
+        )
+      : null;
+    const upNextStopEta = upNextStopRow
+      ? await this.etaMinutesTo(
+          driverLat,
+          driverLng,
+          Number(upNextStopRow.lat),
+          Number(upNextStopRow.lng),
+        )
+      : null;
+
     const currentStop: CurrentStopDto | null = currentStopRow
       ? {
           id: currentStopRow.id,
@@ -280,12 +299,7 @@ export class DriversService {
           lng: Number(currentStopRow.lng),
           status: currentStopRow.status,
           cashAtStop: Number(currentStopRow.cashExpected),
-          etaMinutes: this.etaMinutesTo(
-            driverLat,
-            driverLng,
-            Number(currentStopRow.lat),
-            Number(currentStopRow.lng),
-          ),
+          etaMinutes: currentStopEta,
           passengers: currentStopRow.passengers.map<CurrentStopPassengerDto>(
             (sp) => ({
               id: sp.tripRequest?.id ?? 0,
@@ -373,12 +387,7 @@ export class DriversService {
           city: upNextStopRow.city,
           address: upNextStopRow.address ?? null,
           cashAtStop: Number(upNextStopRow.cashExpected),
-          etaMinutes: this.etaMinutesTo(
-            driverLat,
-            driverLng,
-            Number(upNextStopRow.lat),
-            Number(upNextStopRow.lng),
-          ),
+          etaMinutes: upNextStopEta,
         }
       : null;
 
@@ -552,29 +561,26 @@ export class DriversService {
   }
 
   /**
-   * Haversine distance × inverse avg-speed → integer minutes.
-   * Returns `null` when the driver has no location snapshot.
-   * Snaps to 0 within ~50m of the target (driver is "at the stop").
+   * ETA in whole minutes using the injected MapProvider.
+   *   - null when the driver has no location snapshot
+   *   - snaps to 0 within ~50 m of the target (driver is "at the stop")
+   *   - floors at 1 min once outside the snap radius, so we never
+   *     tell the app "0 min away" when the driver is meters short
    */
-  private etaMinutesTo(
+  private async etaMinutesTo(
     fromLat: number | null,
     fromLng: number | null,
     toLat: number,
     toLng: number,
-  ): number | null {
+  ): Promise<number | null> {
     if (fromLat == null || fromLng == null) return null;
-    const R_KM = 6371;
-    const toRad = (d: number) => (d * Math.PI) / 180;
-    const dLat = toRad(toLat - fromLat);
-    const dLng = toRad(toLng - fromLng);
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(toRad(fromLat)) *
-        Math.cos(toRad(toLat)) *
-        Math.sin(dLng / 2) ** 2;
-    const km = 2 * R_KM * Math.asin(Math.sqrt(a));
-    if (km < 0.05) return 0;
-    return Math.max(1, Math.round((km / ETA_AVG_KMH) * 60));
+    const res = await this.mapProvider.distance(
+      { lat: fromLat, lng: fromLng },
+      { lat: toLat, lng: toLng },
+    );
+    if (res == null) return null;
+    if (res.meters < 50) return 0;
+    return Math.max(1, Math.round(res.durationSeconds / 60));
   }
 
   private fullName(user?: {
