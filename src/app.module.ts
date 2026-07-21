@@ -28,6 +28,7 @@ import { FaqModule } from './faq/faq.module';
 import { MapModule } from './shared/map/map.module';
 import { MatchingConfigModule } from './matching-config/matching-config.module';
 import { MatchingModule } from './matching/matching.module';
+import { GroupingModule } from './grouping/grouping.module';
 import * as path from 'path';
 @Module({
   imports: [
@@ -93,6 +94,7 @@ import * as path from 'path';
     FaqModule,
     MapModule,
     MatchingConfigModule,
+    GroupingModule,
     MatchingModule,
   ],
   controllers: [AppController],

@@ -3,6 +3,7 @@ import { User } from '../../users/user.entity';
 import { TripStatus } from '../../shared/enums/trip-status.enum';
 import { City } from '../../cities/city.entity';
 import { Driver } from '../../drivers/driver.entity';
+import { TripGroup } from '../../grouping/entities/trip-group.entity';
 
 @Entity('trip_requests')
 export class TripRequest {
@@ -47,6 +48,10 @@ export class TripRequest {
 
   @Column({ type: 'enum', enum: TripStatus, default: TripStatus.PENDING })
   status: TripStatus;
+
+  /** The Stage-1 grouping bundle this request landed in, if any. */
+  @ManyToOne(() => TripGroup, { nullable: true })
+  tripGroup: TripGroup | null;
 
   @Column({ nullable: true })
   etaToPickup: string;

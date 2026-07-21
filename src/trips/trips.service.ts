@@ -5,6 +5,7 @@ import { TripRequest } from './entities/trip-request.entity';
 import { Driver } from '../drivers/driver.entity';
 import { DriverLocation } from './entities/driver-location.entity';
 import { MatchingService } from '../matching/matching.service';
+import { GroupingService } from '../grouping/grouping.service';
 import { PackageDelivery } from '../packages/entities/package-delivery.entity';
 import { PackageStatus } from '../shared/enums/package-status.enum';
 import { TripStatus } from '../shared/enums/trip-status.enum';
@@ -81,6 +82,7 @@ export class TripsService {
     private packagesRepository: Repository<PackageDelivery>,
 
     private readonly matchingService: MatchingService,
+    private readonly groupingService: GroupingService,
   ) {}
 
   // ─── Existing endpoints ────────────────────────────────────
@@ -137,9 +139,19 @@ export class TripsService {
 
     const saved = await this.tripsRepository.save(trip);
 
-    // Auto-match: try to find an active driver and offer the trip immediately.
-    // Failure here MUST NOT roll back the passenger's request — we keep it as
-    // PENDING so ops can assign manually from /admin/passenger-requests.
+    // Stage-1 grouping (shadow mode until PR 3 replaces the old matcher).
+    // Failures MUST NOT roll back the passenger's request — we log and
+    // let the legacy path still assign a driver.
+    try {
+      await this.groupingService.attemptGroupingForTripRequest(saved.id);
+    } catch (err) {
+      // Logged inside GroupingService.
+      void err;
+    }
+
+    // Legacy auto-match: keeps assigning individual drivers until PR 3
+    // ships the ranked cascade + broadcast. Once cascade is live, this
+    // block is deleted along with the old MatchingService.
     try {
       const reloaded = await this.tripsRepository.findOne({
         where: { id: saved.id },

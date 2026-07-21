@@ -10,6 +10,7 @@ import { User } from '../../users/user.entity';
 import { City } from '../../cities/city.entity';
 import { PackageSize } from '../../shared/enums/package-size.enum';
 import { PackageStatus } from '../../shared/enums/package-status.enum';
+import { TripGroup } from '../../grouping/entities/trip-group.entity';
 
 @Entity('package_deliveries')
 export class PackageDelivery {
@@ -66,6 +67,10 @@ export class PackageDelivery {
   // Status & tracking
   @Column({ type: 'enum', enum: PackageStatus, default: PackageStatus.PENDING })
   status: PackageStatus;
+
+  /** The Stage-1 grouping bundle this delivery landed in, if any. */
+  @ManyToOne(() => TripGroup, { nullable: true })
+  tripGroup: TripGroup | null;
 
   @CreateDateColumn()
   createdAt: Date;
