@@ -68,6 +68,23 @@ export class PackageDelivery {
   @Column({ type: 'enum', enum: PackageStatus, default: PackageStatus.PENDING })
   status: PackageStatus;
 
+  /**
+   * Master spec §6.2 — weight cap check runs independently of the slot
+   * calculation ("whichever cap binds first, wins"). Nullable until the
+   * sender-facing form starts collecting it; grouping falls back to a
+   * per-size-class default when null.
+   */
+  @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
+  weightKg: string | null;
+
+  /**
+   * Master spec §6.6 — URGENT deliveries skip grouping and get a solo
+   * trip with instant driver search + premium price. Wired in PR 6;
+   * column added here so PR 5 can filter it out of normal grouping.
+   */
+  @Column({ default: false })
+  urgent: boolean;
+
   /** The Stage-1 grouping bundle this delivery landed in, if any. */
   @ManyToOne(() => TripGroup, { nullable: true })
   tripGroup: TripGroup | null;

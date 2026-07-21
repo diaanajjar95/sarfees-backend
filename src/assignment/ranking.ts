@@ -2,6 +2,7 @@ import type { City } from '../cities/city.entity';
 import type { Driver } from '../drivers/driver.entity';
 import type { TripGroup } from '../grouping/entities/trip-group.entity';
 import type { MatchingConfig } from '../matching-config/matching-config.entity';
+import type { VehicleClassCapacity } from '../matching-config/vehicle-class-capacity.entity';
 import { haversineMeters } from '../shared/map/haversine.util';
 
 /**
@@ -27,13 +28,28 @@ export const RANKING_WEIGHTS = {
 
 // ─── Hard filters (§9.1) ──────────────────────────────────────
 
+export interface GroupLoad {
+  /** Sum of passenger seatsCount across all TripRequests. */
+  totalSeats: number;
+  /** Sum of slotsFor(pkg.size) across all PackageDelivery members. */
+  totalPackageSlots: number;
+  /** Sum of package weights. */
+  totalPackageWeightKg: number;
+  /** True iff the group has any passenger requests (mixed vs pkg-only). */
+  hasPassengers: boolean;
+  /** True iff the group has any package deliveries. */
+  hasPackages: boolean;
+  /** Vehicle-class capacity lookup by class enum key. */
+  capacityByClass: Map<string, VehicleClassCapacity>;
+}
+
 /** Every eligible driver must pass every filter — no half-passes. */
 export function isDriverEligible(
   driver: Driver,
   group: TripGroup,
   originCity: City,
   radiusMeters: number,
-  totalSeats: number,
+  load: GroupLoad,
 ): { ok: true } | { ok: false; reason: string } {
   // Online + non-suspended is enforced by the caller's query (driver.status
   // = ACTIVE), so we assume that here.
@@ -55,33 +71,58 @@ export function isDriverEligible(
   );
   if (distM > radiusMeters) return { ok: false, reason: 'outside_origin_city' };
 
-  // Trip-type match. `mix` drivers take anything; a passenger-only group
-  // requires driver's prefTripTypes to include shared/passengers or mix.
-  // A driver with no preference set (null/empty) is treated as "mix" —
+  // Trip-type match per master spec §9.1. "mix" drivers take anything;
+  // "passengers-only" drivers never see package-carrying trips; a
+  // package-carrying group needs a driver whose list includes packages
+  // or mixed. A driver with no preference set is treated as "mix" —
   // matches legacy MatchingService behavior.
   const prefs = driver.prefTripTypes ?? [];
   if (prefs.length > 0) {
-    // Passenger groups (which is all groups in PR 3) need a driver whose
-    // list includes "shared" or "mixed". Packages-only drivers are
-    // filtered out here. The exact strings come from DriverTripType enum
-    // used by the legacy matcher.
-    const acceptsPassengers =
-      prefs.includes('mixed') ||
-      prefs.includes('shared') ||
-      prefs.includes('women_only');
-    if (!acceptsPassengers) return { ok: false, reason: 'trip_type_mismatch' };
-    // Women-only groups (§7) need the driver's list to allow it, or "mix".
-    if (
-      group.womenOnly &&
-      !(prefs.includes('women_only') || prefs.includes('mixed'))
-    ) {
-      return { ok: false, reason: 'women_only_type_mismatch' };
+    if (load.hasPassengers) {
+      const acceptsPassengers =
+        prefs.includes('mixed') ||
+        prefs.includes('shared') ||
+        prefs.includes('women_only');
+      if (!acceptsPassengers)
+        return { ok: false, reason: 'trip_type_passengers_mismatch' };
+      if (
+        group.womenOnly &&
+        !(prefs.includes('women_only') || prefs.includes('mixed'))
+      ) {
+        return { ok: false, reason: 'women_only_type_mismatch' };
+      }
+    }
+    if (load.hasPackages) {
+      const acceptsPackages =
+        prefs.includes('mixed') || prefs.includes('packages');
+      if (!acceptsPackages)
+        return { ok: false, reason: 'trip_type_packages_mismatch' };
     }
   }
 
-  // Capacity — passengerCapacity must fit total seats.
-  if (driver.passengerCapacity < totalSeats)
-    return { ok: false, reason: 'capacity_too_small' };
+  // Passenger capacity — driver.passengerCapacity must fit total seats.
+  if (driver.passengerCapacity < load.totalSeats)
+    return { ok: false, reason: 'passenger_capacity_too_small' };
+
+  // Package capacity — check driver's vehicle-class trunk + weight limits.
+  if (load.hasPackages) {
+    const vc = driver.vehicleClass
+      ? load.capacityByClass.get(driver.vehicleClass)
+      : null;
+    if (!vc) return { ok: false, reason: 'driver_missing_vehicle_class' };
+
+    // Mixed trip: packages ride in trunk only (§6.2).
+    // Packages-only: trunk + empty-seats × seatSlotValue.
+    const emptySeats = load.hasPassengers
+      ? 0
+      : Math.max(0, driver.passengerCapacity - load.totalSeats);
+    const availableSlots =
+      vc.trunkSlots + emptySeats * vc.seatSlotValue;
+    if (load.totalPackageSlots > availableSlots)
+      return { ok: false, reason: 'package_slot_capacity_too_small' };
+    if (load.totalPackageWeightKg > vc.weightLimitKg)
+      return { ok: false, reason: 'package_weight_over_limit' };
+  }
 
   // Going-home restriction — a going-home driver only takes trips
   // whose destination is their home city.
