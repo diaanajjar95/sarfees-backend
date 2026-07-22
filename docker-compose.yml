@@ -12,5 +12,26 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # Self-hosted OSRM for real road distance/duration (§16 map provider).
+  # One-time data prep: bash scripts/osrm-prepare.sh (downloads
+  # Jordan OSM + extracts routing graph). Bring this container up
+  # only after the prep completes; the .osrm files must exist in
+  # ./osrm-data/.
+  osrm:
+    image: osrm/osrm-backend:latest
+    restart: unless-stopped
+    # Host port 5001 → container 5000. macOS AirPlay Receiver holds
+    # 5000 by default; 5001 avoids the conflict without disabling
+    # AirPlay. On Linux either would work.
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./osrm-data:/data
+    command: >
+      osrm-routed --algorithm mld
+      --max-table-size 200
+      /data/jordan-latest.osrm
+    profiles: ["osrm"]  # `docker compose --profile osrm up` to enable
+
 volumes:
   postgres_data:
