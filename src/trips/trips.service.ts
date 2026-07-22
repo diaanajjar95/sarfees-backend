@@ -6,6 +6,7 @@ import { Driver } from '../drivers/driver.entity';
 import { DriverLocation } from './entities/driver-location.entity';
 import { GroupingService } from '../grouping/grouping.service';
 import { AssignmentService } from '../assignment/assignment.service';
+import { MatchingConfigService } from '../matching-config/matching-config.service';
 import { PackageDelivery } from '../packages/entities/package-delivery.entity';
 import { PackageStatus } from '../shared/enums/package-status.enum';
 import { TripStatus } from '../shared/enums/trip-status.enum';
@@ -83,6 +84,7 @@ export class TripsService {
 
     private readonly groupingService: GroupingService,
     private readonly assignmentService: AssignmentService,
+    private readonly matchingConfigService: MatchingConfigService,
   ) {}
 
   // ─── Existing endpoints ────────────────────────────────────
@@ -122,16 +124,28 @@ export class TripsService {
       throw new ForbiddenException(I18nContext.current()?.t('trips.Female only'));
     }
 
+    // Master spec §8 — "now" means "within the next 15-30 min", not
+    // "leaving this exact instant". The passenger is told the actual
+    // departure at request time; we pick the midpoint of the config
+    // window so the group has a real T-30 for cascade to fire against.
+    const cfg = await this.matchingConfigService.getConfig();
+    const nowWindowMidMin =
+      (cfg.nowWindowMinMinutes + cfg.nowWindowMaxMinutes) / 2;
+    const travelDate = dto.isImmediate
+      ? new Date(Date.now() + nowWindowMidMin * 60 * 1000)
+      : new Date(dto.travelDate as string);
+
     const trip = this.tripsRepository.create({
       passenger: { id: userId },
       departureCity: { id: dto.departureCityId },
       arrivalCity: { id: dto.arrivalCityId },
       departureLocation: dto.departureLocation,
       arrivalLocation: dto.arrivalLocation,
-      travelDate: dto.isImmediate ? new Date() : new Date(dto.travelDate as string),
+      travelDate,
       isImmediate: dto.isImmediate || false,
       seatsCount: dto.seatsCount,
       isFemaleOnly: dto.isFemaleOnly || false,
+      bookWholeCar: dto.bookWholeCar || false,
       perSeatFare: estimates.perSeatFare,
       totalFare: estimates.totalFare,
       status: TripStatus.PENDING,

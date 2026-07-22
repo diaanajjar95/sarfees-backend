@@ -40,6 +40,15 @@ export class TripRequest {
   @Column({ default: false })
   isFemaleOnly: boolean;
 
+  /**
+   * Master spec §8 "full-car" — passenger buys every seat in the vehicle.
+   * Its group is born FROZEN with no additions allowed (other passengers
+   * OR packages). Cascade still fires at the normal T-30 mark unless the
+   * request also has isImmediate=true, in which case cascade fires now.
+   */
+  @Column({ default: false })
+  bookWholeCar: boolean;
+
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   perSeatFare: number;
 

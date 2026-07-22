@@ -117,6 +117,9 @@ export class PackagesService {
       termsAccepted: dto.termsAccepted,
       pickupDate,
       isImmediate: dto.isImmediate,
+      urgent: dto.urgent ?? false,
+      weightKg:
+        dto.weightKg != null ? (String(dto.weightKg) as unknown as string) : undefined,
       status: PackageStatus.PENDING,
     };
 

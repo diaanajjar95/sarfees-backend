@@ -466,6 +466,25 @@ export class AssignmentService {
     });
     const alreadyOfferedIds = new Set(priorOffers.map((o) => o.driver.id));
 
+    // Urgent early-broadcast (§6.6). Jump straight to BROADCASTING
+    // after the configured decline threshold rather than walking the
+    // full ranked queue — urgent packages don't have time for it.
+    if (
+      group.urgent &&
+      group.status === TripGroupStatus.OFFERING &&
+      priorOffers.filter(
+        (o) =>
+          o.response === OfferResponse.DECLINE ||
+          o.response === OfferResponse.TIMEOUT,
+      ).length >= cfg.urgentEarlyBroadcastDeclines
+    ) {
+      this.logger.log(
+        `Urgent group #${group.id} hit ${cfg.urgentEarlyBroadcastDeclines} declines — early broadcast`,
+      );
+      await this.escalateOrBroadcast(group);
+      return;
+    }
+
     // Any driver currently mid-offer somewhere else is excluded too.
     const busyDriverRows = await this.offersRepo
       .createQueryBuilder('h')
@@ -627,13 +646,32 @@ export class AssignmentService {
       where: { tripGroup: { id: group.id } },
       relations: ['departureCity', 'arrivalCity'],
     });
-    if (requests.length === 0) {
+    const packages = await this.packagesRepo.find({
+      where: { tripGroup: { id: group.id } },
+    });
+    if (requests.length === 0 && packages.length === 0) {
       this.logger.warn(
-        `offerToDriver: group #${group.id} has no requests, skipping`,
+        `offerToDriver: group #${group.id} has no members, skipping`,
       );
       return;
     }
-    const seedRequest = requests[0];
+
+    // Canonical pickup/dropoff for the seedTrip DTO: prefer the first
+    // passenger request; fall back to the first package for
+    // packages-only trips (urgent solo, or future PR flows).
+    const seed = requests[0]
+      ? {
+          pickupLat: requests[0].departureLocation.lat,
+          pickupLng: requests[0].departureLocation.lng,
+          dropoffLat: requests[0].arrivalLocation.lat,
+          dropoffLng: requests[0].arrivalLocation.lng,
+        }
+      : {
+          pickupLat: packages[0].pickupLocation.lat,
+          pickupLng: packages[0].pickupLocation.lng,
+          dropoffLat: packages[0].dropOffLocation.lat,
+          dropoffLng: packages[0].dropOffLocation.lng,
+        };
 
     const dto: SeedDriverTripDto = {
       driverId: driver.id,
@@ -641,12 +679,9 @@ export class AssignmentService {
       originCity: group.originCity.nameEn,
       destinationCity: group.destCity.nameEn,
       departureTime: group.departureTime.toISOString(),
-      pickupLat: seedRequest.departureLocation.lat,
-      pickupLng: seedRequest.departureLocation.lng,
-      dropoffLat: seedRequest.arrivalLocation.lat,
-      dropoffLng: seedRequest.arrivalLocation.lng,
+      ...seed,
       tripRequestIds: requests.map((r) => r.id),
-      packageDeliveryIds: [],
+      packageDeliveryIds: packages.map((p) => p.id),
       offerCountdownSeconds: cfg.offerCountdownSeconds,
     };
 
