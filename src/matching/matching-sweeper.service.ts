@@ -49,11 +49,44 @@ export class MatchingSweeperService implements OnModuleInit {
   async tick(): Promise<void> {
     try {
       await this.freezeAndCascade();
+      await this.cascadeBornFrozen();
       await this.assignmentService.timeoutExpiredOffers();
     } catch (err) {
       this.logger.error(
         `Sweep tick failed: ${err instanceof Error ? err.message : String(err)}`,
       );
+    }
+  }
+
+  /**
+   * Full-car (§8) groups are born FROZEN — they never sit in OPEN, so
+   * the freezeAndCascade path above never touches them. Once their
+   * departure gets close enough, this catch-all fires the cascade the
+   * same way freezeAndCascade would for a naturally-frozen group.
+   *
+   * Urgent packages fire cascade at creation, not from the sweeper —
+   * we skip them here (status transitions to OFFERING immediately).
+   */
+  private async cascadeBornFrozen(): Promise<void> {
+    const cfg = await this.matchingConfigService.getConfig();
+    const cutoff = new Date(
+      Date.now() + cfg.driverSearchLeadMinutes * 60 * 1000,
+    );
+    const frozen = await this.groupsRepo.find({
+      where: {
+        status: TripGroupStatus.FROZEN,
+        departureTime: LessThanOrEqual(cutoff),
+      },
+      take: 50,
+    });
+    for (const group of frozen) {
+      try {
+        await this.assignmentService.startCascade(group.id);
+      } catch (err) {
+        this.logger.error(
+          `startCascade (born-frozen) failed for group #${group.id}: ${err instanceof Error ? err.message : err}`,
+        );
+      }
     }
   }
 

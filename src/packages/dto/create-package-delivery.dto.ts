@@ -87,4 +87,22 @@ export class CreatePackageDeliveryDto extends EstimatePackageDto {
   @IsOptional()
   @IsDateString()
   pickupDate?: string;
+
+  /**
+   * Master spec §6.6 — URGENT deliveries skip grouping (solo trip),
+   * driver search starts immediately, jumps to broadcast early. The
+   * pricing multiplier is a separate concern handled by the pricing
+   * service (out of matcher scope).
+   */
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  urgent?: boolean;
+
+  @ApiPropertyOptional({
+    example: 2.5,
+    description: 'Weight in kg. Used with slot count for capacity checks (§6.2).',
+  })
+  @IsOptional()
+  weightKg?: number;
 }

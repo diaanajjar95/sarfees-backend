@@ -52,6 +52,16 @@ export class EstimateTripDto {
   @IsOptional()
   @IsBoolean()
   isFemaleOnly?: boolean;
+
+  /**
+   * Full-car booking (master spec §8). Passenger buys the whole
+   * vehicle — no other members join. Composes with isImmediate for a
+   * full-car "now" booking.
+   */
+  @ApiProperty({ required: false, default: false })
+  @IsOptional()
+  @IsBoolean()
+  bookWholeCar?: boolean;
 }
 
 export class CreateTripDto extends EstimateTripDto {}

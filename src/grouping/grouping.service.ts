@@ -1,4 +1,6 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, forwardRef } from '@nestjs/common';
+import { AssignmentService } from '../assignment/assignment.service';
+import type { MatchingConfig } from '../matching-config/matching-config.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, DataSource, EntityManager, Repository } from 'typeorm';
 import { MatchingConfigService } from '../matching-config/matching-config.service';
@@ -53,7 +55,33 @@ export class GroupingService {
     private readonly matchingConfigService: MatchingConfigService,
     private readonly dataSource: DataSource,
     @Inject(MAP_PROVIDER) private readonly mapProvider: MapProvider,
+    @Inject(forwardRef(() => AssignmentService))
+    private readonly assignmentService: AssignmentService,
   ) {}
+
+  /**
+   * Kick off Stage 2 for a group whose sweeper wait doesn't apply —
+   * "now" requests, urgent packages, and full-car+immediate. Uses
+   * setImmediate so we don't block the createRequest response on the
+   * cascade transaction. A regular scheduled full-car falls through
+   * to the sweeper at the T-30 mark like any other frozen group.
+   */
+  private scheduleImmediateCascade(
+    groupId: number,
+    isImmediate: boolean,
+    _cfg: MatchingConfig,
+  ): void {
+    if (!isImmediate) return;
+    setImmediate(() => {
+      this.assignmentService
+        .startCascade(groupId)
+        .catch((err) =>
+          this.logger.error(
+            `Immediate cascade for group #${groupId} failed: ${err instanceof Error ? err.message : err}`,
+          ),
+        );
+    });
+  }
 
   /**
    * Assign a passenger TripRequest to a group. Called after the
@@ -102,6 +130,28 @@ export class GroupingService {
       );
 
       const cfg = await this.matchingConfigService.getConfig();
+
+      // Full-car (§8) — born FROZEN, no other members ever join. Bypass
+      // candidate search entirely and let AssignmentService kick off the
+      // cascade (either immediately for isImmediate=true, or at the
+      // normal T-30 sweeper tick for scheduled full-car).
+      if (request.bookWholeCar) {
+        const group = await this.createGroup(mgr, request, originCity, destCity);
+        group.fullCar = true;
+        group.status = TripGroupStatus.FROZEN;
+        group.frozenAt = new Date();
+        await mgr.save(group);
+        request.tripGroup = group;
+        await mgr.save(request);
+        this.logger.log(
+          `TripRequest #${tripRequestId} started full-car TripGroup #${group.id} (born FROZEN)`,
+        );
+        // Fire cascade if the trip is imminent — no point waiting for
+        // the sweeper if we already know the driver-search moment.
+        this.scheduleImmediateCascade(group.id, request.isImmediate, cfg);
+        return group;
+      }
+
       const candidate: CandidateStop = {
         ownerId: request.id,
         pickup: request.departureLocation,
@@ -184,12 +234,6 @@ export class GroupingService {
         this.logger.warn(`PackageDelivery #${packageId} vanished`);
         return null;
       }
-      if (pkg.urgent) {
-        this.logger.debug(
-          `PackageDelivery #${packageId} is urgent — skip grouping (PR 6 owns solo trips)`,
-        );
-        return null;
-      }
       if (!pkg.pickupDate) {
         this.logger.warn(
           `PackageDelivery #${packageId} has no pickupDate — cannot group`,
@@ -205,6 +249,30 @@ export class GroupingService {
         return null;
       }
 
+      const cfg = await this.matchingConfigService.getConfig();
+
+      // Urgent packages (§6.6) — solo trip, born FROZEN, driver search
+      // starts immediately. No corridor lock or candidate search.
+      if (pkg.urgent) {
+        const group = await this.createGroupForPackage(
+          mgr,
+          pkg,
+          originCity,
+          destCity,
+        );
+        group.urgent = true;
+        group.status = TripGroupStatus.FROZEN;
+        group.frozenAt = new Date();
+        await mgr.save(group);
+        pkg.tripGroup = group;
+        await mgr.save(pkg);
+        this.logger.log(
+          `PackageDelivery #${packageId} started urgent solo TripGroup #${group.id}`,
+        );
+        this.scheduleImmediateCascade(group.id, true, cfg);
+        return group;
+      }
+
       await this.takeCorridorLock(
         mgr,
         originCity.id,
@@ -212,7 +280,6 @@ export class GroupingService {
         pkg.pickupDate,
       );
 
-      const cfg = await this.matchingConfigService.getConfig();
       const candidateStop: CandidateStop = {
         ownerId: pkg.id,
         pickup: pkg.pickupLocation,
