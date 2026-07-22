@@ -12,6 +12,8 @@ import { PackageStatus } from '../shared/enums/package-status.enum';
 import { EstimatePackageDto, CreatePackageDeliveryDto } from './dto/create-package-delivery.dto';
 import { PaginationQueryDto, PaginatedResponse } from '../shared/dto/pagination-query.dto';
 import { I18nContext } from 'nestjs-i18n';
+import { Logger } from '@nestjs/common';
+import { GroupingService } from '../grouping/grouping.service';
 
 /**
  * Sender-facing "active" statuses: anything not delivered or cancelled. Mirrors
@@ -33,9 +35,12 @@ export class PackagesService {
     [PackageSize.LARGE]: 18.0,
   };
 
+  private readonly logger = new Logger(PackagesService.name);
+
   constructor(
     @InjectRepository(PackageDelivery)
     private packagesRepository: Repository<PackageDelivery>,
+    private readonly groupingService: GroupingService,
   ) {}
 
   estimateFee(dto: EstimatePackageDto) {
@@ -117,7 +122,20 @@ export class PackagesService {
 
     const delivery = this.packagesRepository.create(deliveryData);
 
-    return this.packagesRepository.save(delivery);
+    const saved = await this.packagesRepository.save(delivery);
+
+    // Stage-1 grouping (master spec §6.3). Failure MUST NOT block the
+    // sender — the package stays PENDING and can be re-grouped on the
+    // next sweeper tick (planned for PR 4).
+    try {
+      await this.groupingService.attemptGroupingForPackage(saved.id);
+    } catch (err) {
+      this.logger.warn(
+        `Grouping failed for package #${saved.id}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+
+    return saved;
   }
 
   async getUserPackages(

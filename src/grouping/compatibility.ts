@@ -1,5 +1,7 @@
 import type { City } from '../cities/city.entity';
 import type { MatchingConfig } from '../matching-config/matching-config.entity';
+import type { VehicleClassCapacity } from '../matching-config/vehicle-class-capacity.entity';
+import { PackageSize } from '../shared/enums/package-size.enum';
 import type {
   DistanceResult,
   LatLng,
@@ -245,6 +247,84 @@ export async function computeActualPickupTimes(
     actualByOwner.set(curr.ownerId, cursor);
   }
   return { ok: true, actualByOwner };
+}
+
+// ─── Capacity math (§6.2) ────────────────────────────────────
+
+/**
+ * Slot value for a package size, keyed off matching_config so ops
+ * can retune S/M/L without a redeploy.
+ */
+export function slotsFor(size: PackageSize, cfg: MatchingConfig): number {
+  switch (size) {
+    case PackageSize.SMALL:
+      return cfg.slotValueSmall;
+    case PackageSize.MEDIUM:
+      return cfg.slotValueMedium;
+    case PackageSize.LARGE:
+      return cfg.slotValueLarge;
+  }
+}
+
+export interface PackageForCapacity {
+  size: PackageSize;
+  weightKg: number;
+}
+
+/**
+ * Master spec §6.2 — "whichever cap binds first, wins". We check:
+ *   1. Total slots ≤ trunk (mixed trips) or trunk + empty-seats ×
+ *      seatSlotValue (packages-only trips)
+ *   2. Total weight ≤ vehicle weight limit
+ *   3. Package count ≤ mixed(min|max) or packagesOnly(min|max)
+ *
+ * `hasPassenger` marks the trip as "mixed" (§6.2). Empty-seat count
+ * for packages-only trips is passed in — matcher passes 0 for
+ * mixed groups so seat slots don't accidentally count.
+ */
+export function checkCapacity(
+  existing: PackageForCapacity[],
+  candidate: PackageForCapacity,
+  vehicle: VehicleClassCapacity,
+  cfg: MatchingConfig,
+  hasPassenger: boolean,
+  emptySeatsIfPackagesOnly: number,
+): Verdict {
+  const packagesAfter = [...existing, candidate];
+  const totalSlots = packagesAfter.reduce(
+    (n, p) => n + slotsFor(p.size, cfg),
+    0,
+  );
+  const totalWeight = packagesAfter.reduce((n, p) => n + p.weightKg, 0);
+
+  const availableSlots = hasPassenger
+    ? vehicle.trunkSlots
+    : vehicle.trunkSlots + emptySeatsIfPackagesOnly * vehicle.seatSlotValue;
+
+  if (totalSlots > availableSlots)
+    return reject(
+      `slot_cap_${totalSlots}_over_${availableSlots}`,
+    );
+  if (totalWeight > vehicle.weightLimitKg)
+    return reject(
+      `weight_cap_${totalWeight}_over_${vehicle.weightLimitKg}`,
+    );
+
+  const minAllowed = hasPassenger
+    ? cfg.mixedPackageMin
+    : cfg.packagesOnlyPackageMin;
+  const maxAllowed = hasPassenger
+    ? cfg.mixedPackageMax
+    : cfg.packagesOnlyPackageMax;
+  if (packagesAfter.length > maxAllowed)
+    return reject(
+      `count_cap_${packagesAfter.length}_over_${maxAllowed}`,
+    );
+  // Note: minAllowed isn't enforced at insertion — a fresh group of 1
+  // is fine. Enforcement happens at freeze (§6.2 guard rails).
+  void minAllowed;
+
+  return ok;
 }
 
 export const __helpers = { sumOfLegs, haversineMeters } as {

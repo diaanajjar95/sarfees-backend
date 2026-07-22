@@ -4,8 +4,10 @@ import { Driver } from '../drivers/driver.entity';
 import { DriverTrip } from '../driver-trips/entities/driver-trip.entity';
 import { DriverTripsModule } from '../driver-trips/driver-trips.module';
 import { TripGroup } from '../grouping/entities/trip-group.entity';
+import { VehicleClassCapacity } from '../matching-config/vehicle-class-capacity.entity';
 import { DriverNotificationsModule } from '../notifications/driver-notifications.module';
 import { PassengerNotificationsModule } from '../notifications/passenger/passenger-notifications.module';
+import { PackageDelivery } from '../packages/entities/package-delivery.entity';
 import { TripRequest } from '../trips/entities/trip-request.entity';
 import { AssignmentService } from './assignment.service';
 import { EscalationCase } from './entities/escalation-case.entity';
@@ -31,6 +33,8 @@ import { TripOfferHistory } from './entities/trip-offer-history.entity';
       TripRequest,
       Driver,
       DriverTrip,
+      PackageDelivery,
+      VehicleClassCapacity,
     ]),
     forwardRef(() => DriverTripsModule),
     DriverNotificationsModule,

@@ -28,7 +28,10 @@ import { TripStatus } from '../shared/enums/trip-status.enum';
 import { TripRequest } from '../trips/entities/trip-request.entity';
 import { EscalationCase } from './entities/escalation-case.entity';
 import { TripOfferHistory } from './entities/trip-offer-history.entity';
-import { isDriverEligible, rankDrivers } from './ranking';
+import { GroupLoad, isDriverEligible, rankDrivers } from './ranking';
+import { PackageDelivery } from '../packages/entities/package-delivery.entity';
+import { VehicleClassCapacity } from '../matching-config/vehicle-class-capacity.entity';
+import { slotsFor } from '../grouping/compatibility';
 
 /**
  * Stage-2 driver assignment engine (master spec §9).
@@ -63,6 +66,10 @@ export class AssignmentService {
     private readonly driversRepo: Repository<Driver>,
     @InjectRepository(DriverTrip)
     private readonly driverTripsRepo: Repository<DriverTrip>,
+    @InjectRepository(PackageDelivery)
+    private readonly packagesRepo: Repository<PackageDelivery>,
+    @InjectRepository(VehicleClassCapacity)
+    private readonly vehicleCapacityRepo: Repository<VehicleClassCapacity>,
     private readonly matchingConfigService: MatchingConfigService,
     @Inject(forwardRef(() => DriverTripsService))
     private readonly driverTripsService: DriverTripsService,
@@ -366,6 +373,41 @@ export class AssignmentService {
   // ─── Internals ─────────────────────────────────────────────
 
   /**
+   * Aggregate the group's total load (seats + package slots + weight)
+   * plus the vehicle-class capacity lookup, so isDriverEligible can
+   * check both passenger and package limits against a candidate.
+   */
+  private async computeGroupLoad(
+    group: TripGroup,
+    cfg: Awaited<ReturnType<MatchingConfigService['getConfig']>>,
+  ): Promise<GroupLoad> {
+    const requests = await this.requestsRepo.find({
+      where: { tripGroup: { id: group.id } },
+    });
+    const packages = await this.packagesRepo.find({
+      where: { tripGroup: { id: group.id } },
+    });
+    const capRows = await this.vehicleCapacityRepo.find();
+    const capacityByClass = new Map(
+      capRows.map((r) => [r.vehicleClass as string, r]),
+    );
+    return {
+      totalSeats: requests.reduce((n, r) => n + (r.seatsCount ?? 1), 0),
+      totalPackageSlots: packages.reduce(
+        (n, p) => n + slotsFor(p.packageSize, cfg),
+        0,
+      ),
+      totalPackageWeightKg: packages.reduce(
+        (n, p) => n + (p.weightKg != null ? Number(p.weightKg) : 0),
+        0,
+      ),
+      hasPassengers: requests.length > 0,
+      hasPackages: packages.length > 0,
+      capacityByClass,
+    };
+  }
+
+  /**
    * Record how the current offer ended, then decide the next step:
    * next cascade candidate → broadcast → escalation.
    */
@@ -414,10 +456,7 @@ export class AssignmentService {
     }
 
     const cfg = await this.matchingConfigService.getConfig();
-    const requests = await this.requestsRepo.find({
-      where: { tripGroup: { id: group.id } },
-    });
-    const totalSeats = requests.reduce((n, r) => n + (r.seatsCount ?? 1), 0);
+    const load = await this.computeGroupLoad(group, cfg);
 
     // Drivers we've already offered this group are excluded from the
     // cascade — one offer per driver per trip (§9.3).
@@ -445,7 +484,7 @@ export class AssignmentService {
     const eligible = online.filter((d) => {
       if (alreadyOfferedIds.has(d.id)) return false;
       if (busyDriverIds.has(d.id)) return false;
-      return isDriverEligible(d, group, originCity, radius, totalSeats).ok;
+      return isDriverEligible(d, group, originCity, radius, load).ok;
     });
 
     if (eligible.length === 0) {
@@ -500,10 +539,7 @@ export class AssignmentService {
     const originCity = group.originCity;
     const radius =
       originCity.serviceRadiusMeters ?? cfg.defaultServiceRadiusMeters;
-    const requests = await this.requestsRepo.find({
-      where: { tripGroup: { id: group.id } },
-    });
-    const totalSeats = requests.reduce((n, r) => n + (r.seatsCount ?? 1), 0);
+    const load = await this.computeGroupLoad(group, cfg);
 
     const priorOffers = await this.offersRepo.find({
       where: { tripGroup: { id: group.id } },
@@ -520,7 +556,7 @@ export class AssignmentService {
     });
     const pool = online.filter((d) => {
       if (alreadyOfferedIds.has(d.id)) return false;
-      const verdict = isDriverEligible(d, group, originCity, radius, totalSeats);
+      const verdict = isDriverEligible(d, group, originCity, radius, load);
       return verdict.ok;
     });
 
