@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -21,7 +21,7 @@ import { TripGroupStatus } from '../shared/enums/trip-group-status.enum';
  * so ops can dial it up or down via SQL without a redeploy.
  */
 @Injectable()
-export class MatchingSweeperService implements OnModuleInit {
+export class MatchingSweeperService implements OnApplicationBootstrap {
   private readonly logger = new Logger(MatchingSweeperService.name);
   private static readonly CRON_NAME = 'matching-sweeper';
 
@@ -33,7 +33,12 @@ export class MatchingSweeperService implements OnModuleInit {
     private readonly scheduler: SchedulerRegistry,
   ) {}
 
-  async onModuleInit(): Promise<void> {
+  // Deliberately `onApplicationBootstrap` (not `onModuleInit`) —
+  // MatchingConfigService seeds its singleton row in *its* bootstrap
+  // hook, and Nest guarantees all onModuleInits complete before any
+  // onApplicationBootstrap runs. Reading the config here means we're
+  // always after the seed, even on a totally fresh DB.
+  async onApplicationBootstrap(): Promise<void> {
     const cfg = await this.matchingConfigService.getConfig();
     const intervalMs = cfg.sweepIntervalSeconds * 1000;
     const job = new CronJob(`*/${cfg.sweepIntervalSeconds} * * * * *`, () => {
