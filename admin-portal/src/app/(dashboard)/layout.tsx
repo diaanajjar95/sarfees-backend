@@ -5,6 +5,7 @@ import {
   Route,
   Inbox,
   DollarSign,
+  Map as MapIcon,
   Megaphone,
   HelpCircle,
   LogOut,
@@ -18,6 +19,7 @@ const NAV: {
   disabled?: boolean;
 }[] = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/map', label: 'Live map', icon: MapIcon },
   { href: '/passenger-requests', label: 'Passenger requests', icon: Inbox },
   { href: '/drivers', label: 'Drivers', icon: Users },
   { href: '/trips', label: 'Trips', icon: Route },

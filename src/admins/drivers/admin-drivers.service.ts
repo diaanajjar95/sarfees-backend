@@ -37,6 +37,60 @@ export class AdminDriversService {
     private readonly declineLogRepo: Repository<DriverTripDeclineLog>,
   ) {}
 
+  /**
+   * Lean read used by the admin portal's live-driver map. Returns
+   * only ACTIVE + ON_TRIP drivers that have a location snapshot on
+   * file. Small payload (~50 bytes per driver) so ops can poll it
+   * every 30 s without blowing up the API.
+   */
+  async liveMap(): Promise<{
+    drivers: Array<{
+      id: number;
+      name: string;
+      countryCode: string | null;
+      phoneNumber: string | null;
+      status: DriverStatus;
+      lat: number;
+      lng: number;
+      updatedAt: string;
+    }>;
+    generatedAt: string;
+  }> {
+    const rows = await this.driversRepo
+      .createQueryBuilder('d')
+      .select([
+        'd.id',
+        'd.name',
+        'd.countryCode',
+        'd.phoneNumber',
+        'd.status',
+        'd.prefLocationLat',
+        'd.prefLocationLng',
+        'd.updatedAt',
+      ])
+      .where('d.status IN (:...active)', {
+        active: [DriverStatus.ACTIVE, DriverStatus.ON_TRIP],
+      })
+      .andWhere('d.prefLocationLat IS NOT NULL')
+      .andWhere('d.prefLocationLng IS NOT NULL')
+      .orderBy('d.updatedAt', 'DESC')
+      .getMany();
+
+    return {
+      drivers: rows.map((d) => ({
+        id: d.id,
+        name: d.name ?? '',
+        countryCode: d.countryCode ?? null,
+        phoneNumber: d.phoneNumber ?? null,
+        status: d.status,
+        lat: Number(d.prefLocationLat),
+        lng: Number(d.prefLocationLng),
+        updatedAt: d.updatedAt.toISOString(),
+      })),
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
   async list(query: ListDriversQueryDto): Promise<ListDriversResponseDto> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
