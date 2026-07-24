@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Sarfees — Group Trip (3 passengers, one driver)",
-    "description": "Tests Stage-1 GROUPING: three separate passengers book the same corridor (Amman → Irbid) at the same departure time, the engine bundles them into ONE trip group, and one driver serves all of them in a single multi-stop trip.\n\n## How the timing works\n- Passenger A books a **scheduled** trip departing **now + 32 min** (a pre-request script computes this and shares it via `groupTravelDate`).\n- B and C book the same corridor/time within seconds — the group is still OPEN (freeze only happens at T-30), so they join A's group.\n- ~2 min later the sweeper freezes the group and cascades the offer to the top-ranked driver.\n\n## Why the pickup points are close together\nThe compatibility engine enforces a wait tolerance (default 12 min): adding a member is rejected if the extra pickup legs would delay an existing member past their tolerance (`wait_tolerance_exceeded`). The three pickups here are ~1 km apart so every insertion passes. Spread them across town and passenger C gets their own group instead — try it to see the rejection in the API logs.\n\n## Run order\n1. **Auth** — OTP logins for passengers A/B/C and the driver (mock OTP `1234`).\n2. **Driver online** — activate with GPS in the pickup area.\n3. **Passengers book** — A creates the group, B and C join it. Run 3.1 → 3.2 → 3.3 back-to-back (within the ~2 min OPEN window).\n4. **Matching** — re-run 4.1 every ~30 s until `pendingOffer` appears (expect ~2-3 min because of the T-30 freeze). Offer has a 30 s countdown — accept promptly.\n5. **Assign** — accept returns the manifest. Test asserts `summary.passengerCount === 3` (grouping proof) and saves the ordered stop list.\n6. **Execute** — generic loop: `6.2 Arrive at CURRENT stop` then `6.3a/6.3b Confirm` (pickup or dropoff — console tells you which). Repeat 6.2 → confirm for every stop, then complete.\n\n## Prereqs\n- Seeded passengers `790000001/2/3` + driver `770000001` (Contabo test data).\n- Driver has no leftover active trip.\n- Responses are wrapped `{ code, message, data }`.",
+    "description": "Tests Stage-1 GROUPING: three separate passengers book the same corridor (Irbid → Amman) at the same departure time, the engine bundles them into ONE trip group, and one driver serves all of them in a single multi-stop trip.\n\n## How the timing works\n- Passenger A books a **scheduled** trip departing **now + 32 min** (a pre-request script computes this and shares it via `groupTravelDate`).\n- B and C book the same corridor/time within seconds — the group is still OPEN (freeze only happens at T-30), so they join A's group.\n- ~2 min later the sweeper freezes the group and cascades the offer to the top-ranked driver.\n\n## Why the pickup points are close together\nThe compatibility engine enforces a wait tolerance (default 12 min): adding a member is rejected if the extra pickup legs would delay an existing member past their tolerance (`wait_tolerance_exceeded`). The three pickups here are ~1 km apart so every insertion passes. Spread them across town and passenger C gets their own group instead — try it to see the rejection in the API logs.\n\n## ⚠️ If the driver's REAL mobile app is running\nThe driver app pings GPS every ~10 s, and every ping overwrites the matcher's location snapshot — it beats whatever `currentLocationLat/Lng` this collection sends in activate. The cascade hard-filters drivers to the ORIGIN city, so **the trip's departure city must be the city where the driver's phone physically is**, or the driver is silently excluded and the offer goes to other drivers (then escalates). This collection books **Irbid → Amman** with pickups in north Irbid; if you're testing from Amman (or with no real app open), flip `departureCityId`/`arrivalCityId` and swap the departure/arrival coordinates.\n\n## Run order\n1. **Auth** — OTP logins for passengers A/B/C and the driver (mock OTP `1234`).\n2. **Driver online** — activate with GPS in the pickup area.\n3. **Passengers book** — A creates the group, B and C join it. Run 3.1 → 3.2 → 3.3 back-to-back (within the ~2 min OPEN window).\n4. **Matching** — re-run 4.1 every ~30 s until `pendingOffer` appears (expect ~2-3 min because of the T-30 freeze). Offer has a 30 s countdown — accept promptly.\n5. **Assign** — accept returns the manifest. Test asserts `summary.passengerCount === 3` (grouping proof) and saves the ordered stop list.\n6. **Execute** — generic loop: `6.2 Arrive at CURRENT stop` then `6.3a/6.3b Confirm` (pickup or dropoff — console tells you which). Repeat 6.2 → confirm for every stop, then complete.\n\n## Prereqs\n- Seeded passengers `790000001/2/3` + driver `770000001` (Contabo test data).\n- Driver has no leftover active trip.\n- Responses are wrapped `{ code, message, data }`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -141,7 +141,7 @@
               { "key": "Authorization", "value": "Bearer {{driverToken}}" }
             ],
             "url": "{{baseUrl}}/drivers/activate",
-            "body": { "mode": "raw", "raw": "{\n  \"tripTypes\": [\"mixed\"],\n  \"goingHome\": false,\n  \"destinationCity\": \"Irbid\",\n  \"minPassengers\": 1,\n  \"currentLocationLat\": 31.9560,\n  \"currentLocationLng\": 35.9000\n}" }
+            "body": { "mode": "raw", "raw": "{\n  \"tripTypes\": [\"mixed\"],\n  \"goingHome\": false,\n  \"destinationCity\": \"Amman\",\n  \"minPassengers\": 1,\n  \"currentLocationLat\": 32.5808,\n  \"currentLocationLng\": 35.8661\n}" }
           },
           "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
             "const d = pm.response.json().data ?? pm.response.json();",
@@ -162,8 +162,8 @@
               { "key": "Authorization", "value": "Bearer {{passengerAToken}}" }
             ],
             "url": "{{baseUrl}}/trips/request",
-            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 1,\n  \"arrivalCityId\": 2,\n  \"departureLocation\": { \"lat\": 31.9612, \"lng\": 35.8776 },\n  \"arrivalLocation\": { \"lat\": 32.5556, \"lng\": 35.8500 },\n  \"travelDate\": \"{{groupTravelDate}}\",\n  \"seatsCount\": 1\n}" },
-            "description": "Scheduled 32 min out: the group is born OPEN and stays joinable until T-30 (~2 min). Run 3.2 and 3.3 immediately after."
+            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 2,\n  \"arrivalCityId\": 1,\n  \"departureLocation\": { \"lat\": 32.5810, \"lng\": 35.8660 },\n  \"arrivalLocation\": { \"lat\": 31.9612, \"lng\": 35.8776 },\n  \"travelDate\": \"{{groupTravelDate}}\",\n  \"seatsCount\": 1\n}" },
+            "description": "Scheduled 32 min out: the group is born OPEN and stays joinable until T-30 (~2 min). Run 3.2 and 3.3 immediately after. Pickups are in north Irbid, right where the demo driver's phone is."
           },
           "event": [
             { "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
@@ -188,7 +188,7 @@
               { "key": "Authorization", "value": "Bearer {{passengerBToken}}" }
             ],
             "url": "{{baseUrl}}/trips/request",
-            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 1,\n  \"arrivalCityId\": 2,\n  \"departureLocation\": { \"lat\": 31.9560, \"lng\": 35.8850 },\n  \"arrivalLocation\": { \"lat\": 32.5530, \"lng\": 35.8530 },\n  \"travelDate\": \"{{groupTravelDate}}\",\n  \"seatsCount\": 1\n}" }
+            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 2,\n  \"arrivalCityId\": 1,\n  \"departureLocation\": { \"lat\": 32.5790, \"lng\": 35.8680 },\n  \"arrivalLocation\": { \"lat\": 31.9560, \"lng\": 35.8850 },\n  \"travelDate\": \"{{groupTravelDate}}\",\n  \"seatsCount\": 1\n}" }
           },
           "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
             "const d = pm.response.json().data ?? pm.response.json();",
@@ -205,7 +205,7 @@
               { "key": "Authorization", "value": "Bearer {{passengerCToken}}" }
             ],
             "url": "{{baseUrl}}/trips/request",
-            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 1,\n  \"arrivalCityId\": 2,\n  \"departureLocation\": { \"lat\": 31.9530, \"lng\": 35.8900 },\n  \"arrivalLocation\": { \"lat\": 32.5580, \"lng\": 35.8470 },\n  \"travelDate\": \"{{groupTravelDate}}\",\n  \"seatsCount\": 1\n}" }
+            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 2,\n  \"arrivalCityId\": 1,\n  \"departureLocation\": { \"lat\": 32.5820, \"lng\": 35.8640 },\n  \"arrivalLocation\": { \"lat\": 31.9530, \"lng\": 35.8900 },\n  \"travelDate\": \"{{groupTravelDate}}\",\n  \"seatsCount\": 1\n}" }
           },
           "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
             "const d = pm.response.json().data ?? pm.response.json();",
