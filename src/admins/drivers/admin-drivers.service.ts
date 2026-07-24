@@ -1,11 +1,18 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, QueryFailedError, Repository } from 'typeorm';
+import { Brackets, In, QueryFailedError, Repository } from 'typeorm';
+import { DriverTripStop } from '../../driver-trips/entities/driver-trip-stop.entity';
+import {
+  MAP_PROVIDER,
+  type MapProvider,
+} from '../../shared/map/map-provider.interface';
+import { TripRouteDto } from './dto/trip-route.dto';
 import { I18nContext } from 'nestjs-i18n';
 import { Driver } from '../../drivers/driver.entity';
 import { DriverStatus } from '../../shared/enums/driver-status.enum';
@@ -33,9 +40,84 @@ export class AdminDriversService {
     private readonly driversRepo: Repository<Driver>,
     @InjectRepository(DriverTrip)
     private readonly tripsRepo: Repository<DriverTrip>,
+    @InjectRepository(DriverTripStop)
+    private readonly stopsRepo: Repository<DriverTripStop>,
     @InjectRepository(DriverTripDeclineLog)
     private readonly declineLogRepo: Repository<DriverTripDeclineLog>,
+    @Inject(MAP_PROVIDER) private readonly mapProvider: MapProvider,
   ) {}
+
+  /**
+   * Load a driver's currently-in-progress trip and return its stops
+   * plus (if the map provider supports it) the road-following
+   * polyline from OSRM. The admin map fetches this on marker click
+   * to draw the trip line.
+   *
+   * Empty stops → returns empty response with meters/duration/geometry
+   * null; the frontend handles that gracefully.
+   */
+  async tripRoute(driverId: number): Promise<TripRouteDto> {
+    // "Current" = ACCEPTED (still en route to pickup) or IN_PROGRESS
+    // (mid-trip). COMPLETED / CANCELLED / EXPIRED / DECLINED are not
+    // "live" from the admin's perspective.
+    const trip = await this.tripsRepo.findOne({
+      where: {
+        driver: { id: driverId },
+        status: In([DriverTripStatus.ACCEPTED, DriverTripStatus.IN_PROGRESS]),
+      },
+      order: { id: 'DESC' },
+    });
+    if (!trip) {
+      return {
+        driverId,
+        driverTripId: null,
+        stops: [],
+        meters: null,
+        durationSeconds: null,
+        geometry: null,
+      };
+    }
+    const stops = await this.stopsRepo.find({
+      where: { trip: { id: trip.id } },
+      order: { order: 'ASC' },
+    });
+
+    const waypoints = stops.map((s) => ({
+      lat: Number(s.lat),
+      lng: Number(s.lng),
+    }));
+
+    // Only call route() if the provider supports it AND we have at
+    // least 2 stops. Otherwise the client will draw straight lines
+    // (or no line at all for 0/1 stop).
+    let meters: number | null = null;
+    let durationSeconds: number | null = null;
+    let geometry: [number, number][] | null = null;
+    if (waypoints.length >= 2 && typeof this.mapProvider.route === 'function') {
+      const routed = await this.mapProvider.route(waypoints);
+      if (routed) {
+        meters = routed.meters;
+        durationSeconds = routed.durationSeconds;
+        geometry = routed.geometry;
+      }
+    }
+
+    return {
+      driverId,
+      driverTripId: trip.id,
+      stops: stops.map((s) => ({
+        order: s.order,
+        type: s.type,
+        lat: Number(s.lat),
+        lng: Number(s.lng),
+        city: s.city ?? null,
+        address: s.address ?? null,
+      })),
+      meters,
+      durationSeconds,
+      geometry,
+    };
+  }
 
   /**
    * Lean read used by the admin portal's live-driver map. Returns

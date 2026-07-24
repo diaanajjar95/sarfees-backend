@@ -28,6 +28,7 @@ import {
 } from './dto/list-drivers.dto';
 import { AdminDriverDetailDto } from './dto/driver-detail.dto';
 import { LiveMapResponseDto } from './dto/live-map.dto';
+import { TripRouteDto } from './dto/trip-route.dto';
 import { DriverProfileResponseDto } from '../../drivers/dto/driver-profile-response.dto';
 import { Roles } from '../../shared/decorators/roles.decorator';
 import { RolesGuard } from '../../shared/guards/roles.guard';
@@ -50,6 +51,18 @@ export class AdminDriversController {
   @Get('live/map')
   liveMap(): Promise<LiveMapResponseDto> {
     return this.service.liveMap();
+  }
+
+
+  @ApiOperation({
+    summary: 'Current-trip route for the admin map',
+    description:
+      "Returns the ordered stops of the driver's currently-active trip (ACCEPTED or IN_PROGRESS) plus the road-following polyline from OSRM when available.",
+  })
+  @ApiResponse({ status: 200, type: TripRouteDto })
+  @Get(':id/route')
+  tripRoute(@Param('id', ParseIntPipe) id: number): Promise<TripRouteDto> {
+    return this.service.tripRoute(id);
   }
 
   @ApiOperation({ summary: 'List drivers (paginated, filterable)' })
