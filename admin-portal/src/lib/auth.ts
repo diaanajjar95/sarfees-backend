@@ -20,10 +20,19 @@ const REFRESH_TTL_SECONDS = Number(
   process.env.ADMIN_REFRESH_TTL_SECONDS ?? 7 * 24 * 60 * 60,
 );
 
+// `Secure` cookies are only sent over HTTPS. Default: on in production
+// (where we expect TLS via Caddy). Override with COOKIE_SECURE=false
+// for the plain-HTTP no-domain deploy at http://<vps-ip>:8080 — without
+// the override, the cookie is set but browsers never send it back, and
+// the guard kicks every request straight to /login.
+const COOKIE_SECURE =
+  (process.env.COOKIE_SECURE ?? (process.env.NODE_ENV === 'production' ? 'true' : 'false'))
+    .toLowerCase() === 'true';
+
 const cookieOpts = (maxAge: number) => ({
   httpOnly: true,
   sameSite: 'lax' as const,
-  secure: process.env.NODE_ENV === 'production',
+  secure: COOKIE_SECURE,
   path: '/',
   maxAge,
 });

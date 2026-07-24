@@ -1,0 +1,466 @@
+{
+  "info": {
+    "name": "Sarfees — Trip Lifecycle (request → assign → start → finish)",
+    "description": "End-to-end walkthrough of one shared trip on the Sarfees platform, in strict run order.\n\n## Sequence\n1. **Auth — Passenger** — OTP login (mock OTP is `1234`), saves `passengerToken`.\n2. **Auth — Driver** — OTP login, saves `driverToken`.\n3. **Driver goes online** — activate with preferences + GPS at the pickup area so this driver ranks first in the cascade.\n4. **Passenger books** — fare estimate, then a `now` trip request Amman → Irbid. The grouping engine creates a trip group.\n5. **Matching** — the sweeper (every 30 s) freezes the group and offers it to the top-ranked driver. Poll `home-summary` until `pendingOffer` appears — **re-run 5.1 every ~30 s until the test passes**.\n6. **Assign** — driver accepts; the manifest response seeds the stop IDs + passenger row IDs used by the execution steps.\n7. **Execute** — start → arrive at pickup → confirm pickup → arrive at dropoff → confirm dropoff (cash collected) → complete (earnings breakdown).\n\n## Prereqs\n- Seeded passenger `+962 790000001` and driver `+962 770000001` exist (Contabo test data).\n- The driver must NOT already have an active trip — complete or cancel it first.\n- All responses are wrapped as `{ code, message, data }`; scripts read `.data`.\n\nCollection variables chain everything — no manual copying. Run requests top to bottom.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://169.58.67.105" },
+    { "key": "passengerPhone", "value": "790000001" },
+    { "key": "driverPhone", "value": "770000001" },
+    { "key": "countryCode", "value": "+962" },
+    { "key": "otp", "value": "1234" },
+    { "key": "passengerToken", "value": "" },
+    { "key": "driverToken", "value": "" },
+    { "key": "tripRequestId", "value": "" },
+    { "key": "driverTripId", "value": "" },
+    { "key": "pickupStopId", "value": "" },
+    { "key": "dropoffStopId", "value": "" },
+    { "key": "pickupPassengerIds", "value": "[]" },
+    { "key": "dropoffEntries", "value": "[]" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth — Passenger",
+      "item": [
+        {
+          "name": "1.1 Request OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{passengerPhone}}\",\n  \"countryCode\": \"{{countryCode}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('OTP requested', () => pm.response.to.have.status(201));",
+                  "console.log('Mock OTP is 1234 — next request verifies it.');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.2 Verify OTP → passengerToken",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/verify-otp",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{passengerPhone}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"otp\": \"{{otp}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data ?? pm.response.json();",
+                  "pm.collectionVariables.set('passengerToken', d.accessToken);",
+                  "pm.test('passenger token saved', () => pm.expect(d.accessToken).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Auth — Driver",
+      "item": [
+        {
+          "name": "2.1 Request OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/driver/request-otp",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{driverPhone}}\",\n  \"countryCode\": \"{{countryCode}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('OTP requested', () => pm.response.to.have.status(201));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "2.2 Verify OTP → driverToken",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/driver/verify-otp",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phoneNumber\": \"{{driverPhone}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"otp\": \"{{otp}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data ?? pm.response.json();",
+                  "pm.collectionVariables.set('driverToken', d.accessToken);",
+                  "pm.test('driver token saved', () => pm.expect(d.accessToken).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Driver goes online",
+      "item": [
+        {
+          "name": "3.1 Activate (preferences + GPS at pickup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{driverToken}}" }
+            ],
+            "url": "{{baseUrl}}/drivers/activate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tripTypes\": [\"mixed\"],\n  \"goingHome\": false,\n  \"destinationCity\": \"Irbid\",\n  \"minPassengers\": 1,\n  \"currentLocationLat\": 31.9612,\n  \"currentLocationLng\": 35.8776\n}"
+            },
+            "description": "Puts the driver ACTIVE with a location snapshot right at the pickup area and destination preference = Irbid, so the ranking engine scores this driver highest when the cascade starts."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data ?? pm.response.json();",
+                  "pm.test('driver is active', () => pm.expect(d.status).to.eql('active'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Passenger books a trip",
+      "item": [
+        {
+          "name": "4.1 Fare estimate (optional)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{passengerToken}}" }
+            ],
+            "url": "{{baseUrl}}/trips/estimate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"departureCityId\": 1,\n  \"arrivalCityId\": 2,\n  \"departureLocation\": { \"lat\": 31.9612, \"lng\": 35.8776 },\n  \"arrivalLocation\": { \"lat\": 32.5556, \"lng\": 35.85 },\n  \"isImmediate\": true,\n  \"seatsCount\": 1\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('estimate returned', () => pm.response.to.be.success);"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 Create trip request (now, Amman → Irbid)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{passengerToken}}" }
+            ],
+            "url": "{{baseUrl}}/trips/request",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"departureCityId\": 1,\n  \"arrivalCityId\": 2,\n  \"departureLocation\": { \"lat\": 31.9612, \"lng\": 35.8776 },\n  \"arrivalLocation\": { \"lat\": 32.5556, \"lng\": 35.85 },\n  \"isImmediate\": true,\n  \"seatsCount\": 1\n}"
+            },
+            "description": "`isImmediate: true` books a \"now\" trip — the server sets departure inside the 15–30 min window, so the group is eligible for freeze + driver search on the next sweeper tick (≤ 30 s)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data ?? pm.response.json();",
+                  "const id = d.id ?? d.request?.id;",
+                  "if (id) pm.collectionVariables.set('tripRequestId', id);",
+                  "pm.test('trip request created', () => pm.expect(id).to.exist);",
+                  "console.log('Trip request', id, '— sweeper will freeze + start driver search within ~30 s.');"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Matching — wait for the offer",
+      "item": [
+        {
+          "name": "5.1 Poll driver home-summary → pendingOffer (re-run until pass)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/home-summary",
+            "description": "The matching sweeper ticks every 30 s. RE-RUN THIS REQUEST until the test passes — `pendingOffer` carries the DriverTrip id. NOTE: the offer countdown is 30 s; once it appears, run 5.2 + 6.1 promptly or the offer times out and cascades to the next driver (it will come back around if no one else accepts)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data ?? pm.response.json();",
+                  "const offer = d.pendingOffer;",
+                  "if (offer) {",
+                  "  pm.collectionVariables.set('driverTripId', offer.tripId ?? offer.id);",
+                  "  console.log('Offer received! DriverTrip', offer.tripId, '—', offer.secondsRemaining, 's left to accept. Run 5.2 / 6.1 now.');",
+                  "} else {",
+                  "  console.log('No offer yet — sweeper ticks every 30 s. Re-run this request.');",
+                  "}",
+                  "pm.test('pendingOffer present (re-run every ~30 s until it passes)', () => pm.expect(offer, 'pendingOffer').to.exist);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.2 Offer details (S-07 screen)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{driverTripId}}/offer"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('offer details returned', () => pm.response.to.be.success);"]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Assign — driver accepts",
+      "item": [
+        {
+          "name": "6.1 Accept offer → manifest (saves stop + passenger IDs)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{driverTripId}}/accept"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data ?? pm.response.json();",
+                  "const stops = d.stops || [];",
+                  "const pickup = stops.find(s => s.type === 'pickup');",
+                  "const dropoff = [...stops].reverse().find(s => s.type === 'dropoff');",
+                  "pm.test('manifest has pickup + dropoff stops', () => { pm.expect(pickup, 'pickup stop').to.exist; pm.expect(dropoff, 'dropoff stop').to.exist; });",
+                  "if (pickup && dropoff) {",
+                  "  pm.collectionVariables.set('pickupStopId', pickup.id);",
+                  "  pm.collectionVariables.set('dropoffStopId', dropoff.id);",
+                  "  pm.collectionVariables.set('pickupPassengerIds', JSON.stringify(pickup.passengers.map(p => p.id)));",
+                  "  pm.collectionVariables.set('dropoffEntries', JSON.stringify(dropoff.passengers.map(p => ({ id: p.id, cashCollected: true }))));",
+                  "  console.log('Assigned. pickupStop', pickup.id, 'dropoffStop', dropoff.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.2 Passenger sees assigned trip",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{passengerToken}}" }],
+            "url": "{{baseUrl}}/trips/active"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('active trip visible to passenger', () => pm.response.to.be.success);"]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Execute — start to finish",
+      "item": [
+        {
+          "name": "7.1 Start trip (S-09)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{driverTripId}}/start"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('trip started', () => pm.response.to.be.success);"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.2 Arrive at pickup stop (S-10)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{driverTripId}}/stops/{{pickupStopId}}/arrive"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('arrived at pickup', () => pm.response.to.be.success);"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.3 Confirm pickup (S-11)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{driverToken}}" }
+            ],
+            "url": "{{baseUrl}}/drivers/trips/{{driverTripId}}/stops/{{pickupStopId}}/confirm-pickup",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"passengersPickedUp\": {{pickupPassengerIds}},\n  \"noShows\": []\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('pickup confirmed', () => pm.response.to.be.success);"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.4 Arrive at dropoff stop",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{driverTripId}}/stops/{{dropoffStopId}}/arrive"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('arrived at dropoff', () => pm.response.to.be.success);"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.5 Confirm dropoff + cash (S-12)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{driverToken}}" }
+            ],
+            "url": "{{baseUrl}}/drivers/trips/{{driverTripId}}/stops/{{dropoffStopId}}/confirm-dropoff",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"passengersDroppedOff\": {{dropoffEntries}},\n  \"packagesDelivered\": []\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('dropoff confirmed', () => pm.response.to.be.success);"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.6 Complete trip → earnings (S-13)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{driverTripId}}/complete"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data ?? pm.response.json();",
+                  "pm.test('trip completed', () => pm.response.to.be.success);",
+                  "console.log('Earnings breakdown:', JSON.stringify(d, null, 2));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.7 Passenger trip history shows completed",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{passengerToken}}" }],
+            "url": "{{baseUrl}}/trips/my-trips"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('history returned', () => pm.response.to.be.success);"]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

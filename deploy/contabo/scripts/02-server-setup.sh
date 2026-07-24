@@ -17,6 +17,7 @@
 set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/diaanajjar95/sarfees-backend.git}"
+REPO_BRANCH="${REPO_BRANCH:-main}"
 DEPLOY_USER="${DEPLOY_USER:-sarfees}"
 DEPLOY_DIR="/opt/sarfees"
 
@@ -41,13 +42,17 @@ if ! command -v docker >/dev/null 2>&1; then
 	apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
 
-echo "==> UFW firewall (SSH + HTTP + HTTPS)"
+echo "==> UFW firewall (SSH + HTTP + HTTPS + admin :8080)"
 ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow OpenSSH
 ufw allow 80/tcp
 ufw allow 443/tcp
+# Admin portal — public port while there's no admin.sarfees.com
+# domain to hide it behind. Close this once DNS is live and the
+# named-domain Caddyfile block is swapped in.
+ufw allow 8080/tcp
 ufw --force enable
 
 echo "==> Creating deploy user '$DEPLOY_USER'"
@@ -66,12 +71,12 @@ if ! id "$DEPLOY_USER" &>/dev/null; then
 	echo "$DEPLOY_USER ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$DEPLOY_USER"
 fi
 
-echo "==> Cloning repo into $DEPLOY_DIR"
+echo "==> Cloning repo (branch $REPO_BRANCH) into $DEPLOY_DIR"
 if [ ! -d "$DEPLOY_DIR/.git" ]; then
 	install -d -o "$DEPLOY_USER" -g "$DEPLOY_USER" "$DEPLOY_DIR"
-	sudo -u "$DEPLOY_USER" git clone "$REPO_URL" "$DEPLOY_DIR"
+	sudo -u "$DEPLOY_USER" git clone --branch "$REPO_BRANCH" "$REPO_URL" "$DEPLOY_DIR"
 else
-	echo "  $DEPLOY_DIR already exists — skipping clone"
+	echo "  $DEPLOY_DIR already exists — skipping clone (branch: $(sudo -u "$DEPLOY_USER" git -C "$DEPLOY_DIR" rev-parse --abbrev-ref HEAD))"
 fi
 
 echo ""
