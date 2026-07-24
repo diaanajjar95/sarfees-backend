@@ -77,6 +77,12 @@ services:
       ADMIN_ACCESS_TTL_SECONDS: "2592000"
       ADMIN_REFRESH_TTL_SECONDS: "2592000"
       NODE_ENV: production
+      # We're serving the admin portal over plain HTTP on :8080 until
+      # DNS + Let's Encrypt are wired up. Browsers won't send Secure
+      # cookies over HTTP, so the session cookie would round-trip once
+      # and then be dropped — flip this to "true" the moment the site
+      # is behind HTTPS (named-domain Caddy block).
+      COOKIE_SECURE: "false"
       PORT: "3001"
     networks:
       - sarfees-net
