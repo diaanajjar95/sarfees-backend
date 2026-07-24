@@ -1,7 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { MapContainer, Marker, Popup, TileLayer } from 'react-leaflet';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  CircleMarker,
+  MapContainer,
+  Marker,
+  Polyline,
+  Popup,
+  TileLayer,
+} from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -30,6 +37,35 @@ interface LiveMapDriver {
 interface LiveMapResponse {
   drivers: LiveMapDriver[];
   generatedAt: string;
+}
+
+interface TripStop {
+  order: number;
+  type: string;
+  lat: number;
+  lng: number;
+  city: string | null;
+  address: string | null;
+}
+
+interface TripRouteResponse {
+  driverId: number;
+  driverTripId: number | null;
+  stops: TripStop[];
+  meters: number | null;
+  durationSeconds: number | null;
+  /** [lng, lat] pairs from OSRM (GeoJSON convention). */
+  geometry: [number, number][] | null;
+}
+
+interface RouteOverlay {
+  driverId: number;
+  driverName: string;
+  stops: TripStop[];
+  latLngPath: [number, number][]; // Leaflet-friendly [lat, lng] pairs
+  meters: number | null;
+  durationSeconds: number | null;
+  isFallback: boolean; // true when we drew straight lines because OSRM returned no geometry
 }
 
 const REFRESH_MS = 30_000;
@@ -131,6 +167,55 @@ export default function LiveDriverMap() {
   const activeCount = drivers.filter((d) => d.status === 'active').length;
   const onTripCount = drivers.filter((d) => d.status === 'on_trip').length;
 
+  // Route overlay + loading state. Only one route drawn at a time —
+  // clicking a different on-trip pin replaces it, clicking anywhere
+  // else clears it.
+  const [route, setRoute] = useState<RouteOverlay | null>(null);
+  const [routeLoading, setRouteLoading] = useState<number | null>(null);
+  const [routeErr, setRouteErr] = useState<string | null>(null);
+
+  const showTripRoute = useCallback(async (d: LiveMapDriver) => {
+    if (d.status !== 'on_trip') return;
+    setRouteLoading(d.id);
+    setRouteErr(null);
+    try {
+      const res = await fetch(`/api/admin/drivers/${d.id}/trip-route`, {
+        credentials: 'same-origin',
+      });
+      if (!res.ok) throw new Error(`trip-route returned ${res.status}`);
+      const body = (await res.json()) as TripRouteResponse;
+      if (!body.driverTripId || body.stops.length < 2) {
+        setRouteErr('No active trip stops for this driver');
+        setRoute(null);
+        return;
+      }
+      // OSRM returns [lng, lat]; Leaflet wants [lat, lng]. Convert.
+      const geomLatLng: [number, number][] | null = body.geometry
+        ? body.geometry.map(([lng, lat]) => [lat, lng])
+        : null;
+      // Fallback for providers without road geometry: connect stops
+      // with straight lines so we at least show the intent.
+      const stopPath: [number, number][] = body.stops.map((s) => [
+        s.lat,
+        s.lng,
+      ]);
+      setRoute({
+        driverId: d.id,
+        driverName: d.name || `Driver #${d.id}`,
+        stops: body.stops,
+        latLngPath: geomLatLng ?? stopPath,
+        meters: body.meters,
+        durationSeconds: body.durationSeconds,
+        isFallback: !geomLatLng,
+      });
+    } catch (e) {
+      setRouteErr(e instanceof Error ? e.message : String(e));
+      setRoute(null);
+    } finally {
+      setRouteLoading(null);
+    }
+  }, []);
+
   return (
     <div className="relative h-[calc(100vh-8rem)] w-full overflow-hidden rounded-xl border">
       <MapContainer
@@ -148,13 +233,15 @@ export default function LiveDriverMap() {
             key={d.id}
             position={[d.lat, d.lng]}
             icon={icons[d.status] ?? icons.active}
+            eventHandlers={{
+              click: () => showTripRoute(d),
+            }}
           >
             <Popup>
               <div className="text-sm">
                 <div className="font-semibold">{d.name || `Driver #${d.id}`}</div>
                 <div className="text-gray-600">
-                  {d.countryCode ?? ''}
-                  {d.phoneNumber ?? '—'}
+                  {d.countryCode ?? ''} {d.phoneNumber ?? '—'}
                 </div>
                 <div className="mt-1">
                   <span
@@ -167,10 +254,61 @@ export default function LiveDriverMap() {
                 <div className="mt-1 text-xs text-gray-500">
                   Last update: {formatAge(d.updatedAt)}
                 </div>
+                {d.status === 'on_trip' && (
+                  <div className="mt-1 text-xs text-blue-600">
+                    {routeLoading === d.id
+                      ? 'Loading route…'
+                      : route?.driverId === d.id
+                        ? 'Route shown'
+                        : 'Click marker to show route'}
+                  </div>
+                )}
               </div>
             </Popup>
           </Marker>
         ))}
+
+        {/* Trip route overlay — polyline + stop pins */}
+        {route && (
+          <>
+            <Polyline
+              positions={route.latLngPath}
+              pathOptions={{
+                color: STATUS_COLOR.on_trip,
+                weight: 4,
+                opacity: 0.75,
+                dashArray: route.isFallback ? '8 8' : undefined,
+              }}
+            />
+            {route.stops.map((s) => (
+              <CircleMarker
+                key={`${route.driverId}-stop-${s.order}`}
+                center={[s.lat, s.lng]}
+                radius={6}
+                pathOptions={{
+                  color: 'white',
+                  weight: 2,
+                  fillColor: s.type === 'pickup' ? '#f59e0b' : '#8b5cf6',
+                  fillOpacity: 1,
+                }}
+              >
+                <Popup>
+                  <div className="text-sm">
+                    <div className="font-semibold">
+                      Stop {s.order + 1} — {s.type}
+                    </div>
+                    {s.address && (
+                      <div className="text-xs text-gray-600">{s.address}</div>
+                    )}
+                    {s.city && (
+                      <div className="text-xs text-gray-500">{s.city}</div>
+                    )}
+                  </div>
+                </Popup>
+              </CircleMarker>
+            ))}
+          </>
+        )}
       </MapContainer>
 
       {/* Overlay: legend + counts */}
@@ -198,6 +336,36 @@ export default function LiveDriverMap() {
               : `Updated ${data ? formatAge(data.generatedAt) : ''}`}
         </div>
         <div className="mt-1 text-xs text-gray-400">Refresh every 30 s</div>
+
+        {(route || routeErr) && (
+          <div className="mt-3 border-t pt-2">
+            {route && (
+              <>
+                <div className="text-xs font-semibold">Trip route</div>
+                <div className="text-xs text-gray-600">{route.driverName}</div>
+                {route.meters != null && route.durationSeconds != null && (
+                  <div className="text-xs text-gray-500">
+                    {(route.meters / 1000).toFixed(1)} km ·{' '}
+                    {Math.round(route.durationSeconds / 60)} min
+                    {route.isFallback && ' (straight-line)'}
+                  </div>
+                )}
+              </>
+            )}
+            {routeErr && (
+              <div className="text-xs text-red-600">{routeErr}</div>
+            )}
+            <button
+              className="mt-1 text-xs text-blue-600 hover:underline"
+              onClick={() => {
+                setRoute(null);
+                setRouteErr(null);
+              }}
+            >
+              Clear route
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import type {
   DistanceResult,
   LatLng,
   MapProvider,
+  RouteResult,
 } from './map-provider.interface';
 
 /**
@@ -80,5 +81,15 @@ export class CachedMapProvider implements MapProvider {
       }
     }
     return cached;
+  }
+
+  /**
+   * Route geometries are big (hundreds of coord pairs) and infrequent
+   * (only fired from the admin map on click). Passing straight through
+   * without caching keeps the LRU footprint bounded.
+   */
+  async route(waypoints: LatLng[]): Promise<RouteResult | null> {
+    if (typeof this.inner.route !== 'function') return null;
+    return this.inner.route(waypoints);
   }
 }

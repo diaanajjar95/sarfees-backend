@@ -3,6 +3,7 @@ import type {
   DistanceResult,
   LatLng,
   MapProvider,
+  RouteResult,
 } from './map-provider.interface';
 
 /**
@@ -120,6 +121,64 @@ export class OsrmMapProvider implements MapProvider {
         `OSRM Table error: ${(err as Error).message} — returning null rows`,
       );
       return origins.map(() => destinations.map(() => null));
+    }
+  }
+
+  /**
+   * Follow the road network through the waypoint sequence and return
+   * the polyline. Uses `overview=full&geometries=geojson` so we get
+   * a native `[lng, lat][]` array back — no polyline decoding needed
+   * on the client. Requires at least 2 waypoints.
+   */
+  async route(waypoints: LatLng[]): Promise<RouteResult | null> {
+    if (waypoints.length < 2) return null;
+    const coords = waypoints.map((w) => `${w.lng},${w.lat}`).join(';');
+    const url =
+      `${this.baseUrl}/route/v1/driving/${coords}` +
+      `?overview=full&geometries=geojson&alternatives=false&steps=false`;
+
+    try {
+      const res = await this.fetchWithTimeout(url);
+      if (!res.ok) {
+        this.logger.warn(
+          `OSRM Route (geometry) ${res.status} — returning null`,
+        );
+        return null;
+      }
+      const body = (await res.json()) as {
+        code?: string;
+        routes?: Array<{
+          distance?: number;
+          duration?: number;
+          geometry?: { coordinates?: [number, number][] };
+        }>;
+      };
+      if (body.code !== 'Ok') {
+        this.logger.warn(
+          `OSRM Route (geometry) code=${body.code} — returning null`,
+        );
+        return null;
+      }
+      const r = body.routes?.[0];
+      const geom = r?.geometry?.coordinates;
+      if (
+        !r ||
+        r.distance == null ||
+        r.duration == null ||
+        !Array.isArray(geom)
+      ) {
+        return null;
+      }
+      return {
+        meters: r.distance,
+        durationSeconds: Math.round(r.duration),
+        geometry: geom,
+      };
+    } catch (err) {
+      this.logger.warn(
+        `OSRM Route (geometry) error: ${(err as Error).message} — returning null`,
+      );
+      return null;
     }
   }
 
