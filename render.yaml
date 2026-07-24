@@ -105,16 +105,22 @@ services:
       - key: SUPPORTED_LANGUAGES
         value: en,ar
 
-      # ─── Map provider (Mapbox in prod; Haversine locally) ────────────
-      # Get MAPBOX_ACCESS_TOKEN from the Mapbox dashboard, scope it to
-      # Directions + Matrix APIs, and paste into the Render dashboard
-      # secrets — do NOT commit real tokens here.
+      # ─── Map provider ────────────────────────────────────────────────
+      # Render can't self-host OSRM (single-container services), so
+      # Render deploys stick with `haversine`. Contabo runs OSRM in a
+      # sidecar — see deploy/contabo/docker-compose.yml. If you want
+      # Mapbox on Render, set MAP_PROVIDER=mapbox and paste a token
+      # into MAPBOX_ACCESS_TOKEN in the dashboard (do NOT commit).
       - key: MAP_PROVIDER
-        value: mapbox
+        value: haversine
       - key: MAPBOX_ACCESS_TOKEN
         sync: false
       - key: MAPBOX_BASE_URL
         value: https://api.mapbox.com
+      # OSRM_BASE_URL is unused on Render; kept here for parity with
+      # deploy/contabo/.env.example.
+      - key: OSRM_BASE_URL
+        sync: false
       - key: MAP_CACHE_MAX_ENTRIES
         value: "10000"
       - key: MAP_CACHE_TTL_HOURS
