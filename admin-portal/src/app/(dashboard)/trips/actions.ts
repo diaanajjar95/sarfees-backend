@@ -90,3 +90,36 @@ export async function manualAssignAction(
   revalidatePath('/trips');
   redirect(`/trips/${resp.tripId}`);
 }
+
+export interface CancelResult {
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Ops full-stop on a trip. Backend cancels the trip + linked
+ * requests/packages/group, releases the driver penalty-free, and
+ * notifies everyone. Reason is mandatory.
+ */
+export async function cancelTripAction(
+  _prev: CancelResult | null,
+  formData: FormData,
+): Promise<CancelResult> {
+  const tripId = num(formData.get('tripId'));
+  const reason = str(formData.get('reason'));
+  if (!tripId) return { ok: false, error: 'Missing trip id.' };
+  if (!reason) return { ok: false, error: 'A cancellation reason is required.' };
+
+  try {
+    await apiFetch(`/admin/trips/${tripId}/cancel`, {
+      method: 'POST',
+      body: { reason },
+    });
+  } catch (err) {
+    if (err instanceof ApiError) return { ok: false, error: err.message };
+    return { ok: false, error: 'Unable to cancel the trip.' };
+  }
+  revalidatePath('/trips');
+  revalidatePath(`/trips/${tripId}`);
+  return { ok: true };
+}

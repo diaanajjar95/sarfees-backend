@@ -1216,6 +1216,134 @@ export class DriverTripsService {
     return txnResult;
   }
 
+  /**
+   * Ops-initiated full stop from the admin portal. Unlike a driver
+   * cancel (which re-queues the group for another driver), an admin
+   * cancel kills the trip outright: trip + linked requests + packages
+   * + trip group all go CANCELLED, the driver is released back to
+   * ACTIVE with **no penalty** (it wasn't their decision), and every
+   * affected passenger/sender is notified.
+   *
+   * Same after-pickup guard as the driver flow — once someone is in
+   * the car, ops resolves by phone, not by button.
+   */
+  async adminCancel(
+    tripId: number,
+    adminId: number,
+    reason: string,
+  ): Promise<{ tripId: number; cancelledRequestIds: number[] }> {
+    const trip = await this.tripsRepo.findOne({
+      where: { id: tripId },
+      relations: ['driver'],
+    });
+    if (!trip) {
+      throw new NotFoundException('Trip not found');
+    }
+    if (
+      trip.status !== DriverTripStatus.ACCEPTED &&
+      trip.status !== DriverTripStatus.IN_PROGRESS
+    ) {
+      throw new BadRequestException(
+        `Only accepted or in-progress trips can be cancelled (this one is ${trip.status}).`,
+      );
+    }
+    if (trip.status === DriverTripStatus.IN_PROGRESS) {
+      const anyPickedUp = await this.stopPassengersRepo
+        .createQueryBuilder('sp')
+        .innerJoin('sp.stop', 'stop')
+        .where('stop.tripId = :tripId', { tripId: trip.id })
+        .andWhere('sp.status = :picked', {
+          picked: StopPassengerStatus.PICKED_UP,
+        })
+        .getCount();
+      if (anyPickedUp > 0) {
+        throw new ForbiddenException(
+          'Passengers are already in the vehicle — resolve this trip with the driver directly instead of cancelling.',
+        );
+      }
+    }
+
+    const tripRequestIds = await this.collectLinkedTripRequestIds(trip.id);
+    const packageIds = await this.collectLinkedPackageIds(trip.id);
+    const driverId = trip.driver?.id ?? null;
+
+    await this.dataSource.transaction(async (mgr) => {
+      const now = new Date();
+      trip.status = DriverTripStatus.CANCELLED;
+      trip.cancelledAt = now;
+      trip.cancellationReason = reason;
+      trip.cancelledByAdminId = adminId;
+      await mgr.save(trip);
+
+      if (tripRequestIds.length) {
+        await mgr
+          .createQueryBuilder()
+          .update(TripRequest)
+          .set({
+            status: TripStatus.CANCELLED,
+            statusUpdatedAt: now,
+            cancellationReason: reason,
+            cancelledByAdminId: adminId,
+          })
+          .whereInIds(tripRequestIds)
+          .execute();
+      }
+      if (packageIds.length) {
+        await mgr
+          .createQueryBuilder()
+          .update(PackageDelivery)
+          .set({ status: PackageStatus.CANCELLED })
+          .whereInIds(packageIds)
+          .execute();
+      }
+
+      // Kill the linked trip group too — admin cancel must NOT
+      // restart the cascade (unlike a driver cancel).
+      await mgr.query(
+        `UPDATE trip_groups g SET status = 'cancelled'
+         WHERE g.id IN (
+           SELECT DISTINCT "tripGroupId" FROM trip_offer_history
+           WHERE "driverTripId" = $1 AND "tripGroupId" IS NOT NULL
+         ) AND g.status NOT IN ('completed', 'cancelled')`,
+        [trip.id],
+      );
+
+      // Release the driver, no penalty — ops made this call.
+      if (driverId) {
+        await mgr.update(Driver, { id: driverId }, {
+          status: DriverStatus.ACTIVE,
+        });
+      }
+    });
+
+    const passengerUserIds =
+      await this.passengerUserIdsForRequests(tripRequestIds);
+    await this.emitPassengerNotifications({
+      userIds: passengerUserIds,
+      type: PassengerNotificationType.TRIP_CANCELLED,
+      titleEn: 'Trip cancelled by Sarfees',
+      titleAr: 'قامت سرفيس بإلغاء الرحلة',
+      bodyEn: 'Sarfees support cancelled your trip. Please book again or contact support.',
+      bodyAr: 'ألغى فريق دعم سرفيس رحلتك. يرجى الحجز مرة أخرى أو التواصل مع الدعم.',
+      payload: { tripId: trip.id, byAdmin: true },
+    });
+    const senderUserIds = await this.senderUserIdsForPackages(packageIds);
+    await this.emitPassengerNotifications({
+      userIds: senderUserIds,
+      type: PassengerNotificationType.PACKAGE_CANCELLED,
+      titleEn: 'Package delivery cancelled by Sarfees',
+      titleAr: 'قامت سرفيس بإلغاء توصيل الطرد',
+      bodyEn: 'Sarfees support cancelled the trip carrying your package. Please rebook or contact support.',
+      bodyAr: 'ألغى فريق دعم سرفيس الرحلة التي تحمل طردك. يرجى إعادة الحجز أو التواصل مع الدعم.',
+      payload: { tripId: trip.id, byAdmin: true },
+    });
+
+    this.logger.log(
+      `Admin #${adminId} cancelled trip #${trip.id} (${tripRequestIds.length} requests, ${packageIds.length} packages): ${reason}`,
+    );
+    return { tripId: trip.id, cancelledRequestIds: tripRequestIds };
+  }
+
   // ═════════════════════════════════════════════════════════════
   // Dev seeder — manufacture an OFFERED trip for testing
   // ═════════════════════════════════════════════════════════════

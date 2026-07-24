@@ -62,6 +62,18 @@ export class TripRequest {
   @ManyToOne(() => TripGroup, { nullable: true })
   tripGroup: TripGroup | null;
 
+  /**
+   * Why the request was cancelled. Free text; ops-entered when the
+   * cancellation came from the admin portal, null for passenger
+   * self-cancels (the app offers no reason field today).
+   */
+  @Column({ type: 'text', nullable: true })
+  cancellationReason: string | null;
+
+  /** Admin who cancelled this request, when ops-initiated. */
+  @Column({ type: 'int', nullable: true })
+  cancelledByAdminId: number | null;
+
   @Column({ nullable: true })
   etaToPickup: string;
 

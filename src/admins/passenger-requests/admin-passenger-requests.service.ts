@@ -1,6 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { AssignmentService } from '../../assignment/assignment.service';
 import { TripRequest } from '../../trips/entities/trip-request.entity';
 import { TripStatus } from '../../shared/enums/trip-status.enum';
 import {
@@ -11,10 +17,59 @@ import {
 
 @Injectable()
 export class AdminPassengerRequestsService {
+  private readonly logger = new Logger(AdminPassengerRequestsService.name);
+
   constructor(
     @InjectRepository(TripRequest)
     private readonly repo: Repository<TripRequest>,
+    private readonly assignmentService: AssignmentService,
   ) {}
+
+  /**
+   * Ops-initiated cancel of a single passenger request. Mirrors the
+   * passenger's own cancel path (status flip + Stage-1 group
+   * bookkeeping via AssignmentService.handlePassengerCancel) but
+   * records who did it and why. Terminal states are rejected.
+   */
+  async cancel(
+    id: number,
+    adminId: number,
+    reason: string,
+  ): Promise<{ id: number; status: TripStatus }> {
+    const req = await this.repo.findOne({ where: { id } });
+    if (!req) {
+      throw new NotFoundException('Passenger request not found');
+    }
+    if (
+      req.status === TripStatus.CANCELLED ||
+      req.status === TripStatus.COMPLETED
+    ) {
+      throw new BadRequestException(
+        `Request is already ${req.status.toLowerCase()} — nothing to cancel.`,
+      );
+    }
+
+    req.status = TripStatus.CANCELLED;
+    req.statusUpdatedAt = new Date();
+    req.cancellationReason = reason;
+    req.cancelledByAdminId = adminId;
+    await this.repo.save(req);
+
+    // Same group bookkeeping the passenger's own cancel runs (§10):
+    // pre-freeze removes them from the group, post-freeze keeps the
+    // search going with updated composition. Failure must not flip
+    // the status back — the request is already CANCELLED at the DB.
+    try {
+      await this.assignmentService.handlePassengerCancel(id);
+    } catch (err) {
+      this.logger.warn(
+        `handlePassengerCancel failed for request #${id}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+
+    this.logger.log(`Admin #${adminId} cancelled request #${id}: ${reason}`);
+    return { id: req.id, status: req.status };
+  }
 
   async list(
     query: ListPassengerRequestsQueryDto,

@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
 import { ApiError, apiFetch } from '@/lib/api';
 import type { PassengerRequestRow } from '@/lib/types';
+import CancelWithReason from '../../_components/CancelWithReason';
+import { cancelRequestAction } from '../actions';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -61,11 +63,22 @@ export default async function PassengerRequestDetailPage({ params }: PageProps) 
             <span>· created {new Date(req.createdAt).toLocaleString()}</span>
           </div>
         </div>
-        {isPending && (
-          <Link href={assignHref} className="btn-primary">
-            Assign to driver →
-          </Link>
-        )}
+        <div className="flex items-start gap-2 flex-wrap">
+          {isPending && (
+            <Link href={assignHref} className="btn-primary">
+              Assign to driver →
+            </Link>
+          )}
+          {req.status !== 'CANCELLED' && req.status !== 'COMPLETED' && (
+            <CancelWithReason
+              action={cancelRequestAction}
+              idFieldName="requestId"
+              id={req.id}
+              label="Cancel request"
+              consequence="Cancels this passenger's request and updates their trip group. The reason is stored for audit."
+            />
+          )}
+        </div>
       </div>
 
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">

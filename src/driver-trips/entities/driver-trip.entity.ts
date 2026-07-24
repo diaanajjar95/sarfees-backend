@@ -84,6 +84,10 @@ export class DriverTrip {
   @Column({ nullable: true })
   cancellationZone: number;
 
+  /** Admin who cancelled this trip, when ops-initiated (null = driver cancel). */
+  @Column({ type: 'int', nullable: true })
+  cancelledByAdminId: number | null;
+
   // ─── Relations ────────────────────────────────────────────
   @OneToMany(() => DriverTripStop, (stop) => stop.trip, {
     cascade: true,
