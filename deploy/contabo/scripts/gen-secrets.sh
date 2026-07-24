@@ -35,14 +35,16 @@ set_env() {
 	fi
 }
 
-echo "==> Rotating JWT secrets in $ENV"
+echo "==> Rotating JWT + admin-portal secrets in $ENV"
 set_env JWT_ACCESS_SECRET          "$(gen)"
 set_env JWT_REFRESH_SECRET         "$(gen)"
 set_env JWT_DRIVER_ACCESS_SECRET   "$(gen)"
 set_env JWT_DRIVER_REFRESH_SECRET  "$(gen)"
 set_env JWT_ADMIN_ACCESS_SECRET    "$(gen)"
 set_env JWT_ADMIN_REFRESH_SECRET   "$(gen)"
+# Admin portal cookie signing key — 32 hex chars is plenty.
+set_env ADMIN_SESSION_SECRET       "$(openssl rand -hex 32)"
 
 rm -f "$ENV.bak"
 echo "done. Sanity check (values redacted):"
-grep '^JWT_' "$ENV" | sed 's/=.*$/=<64 base64 chars>/'
+grep -E '^(JWT_|ADMIN_SESSION_SECRET)' "$ENV" | sed 's/=.*$/=<redacted>/'
