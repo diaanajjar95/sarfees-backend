@@ -58,7 +58,7 @@ token, then retry.
 |---|---|---|
 | GET | `/packages/prohibited-items` | Bilingual prohibited-items list — show it next to the legal attestation checkbox on the request screen. |
 | POST | `/packages/estimate` | Delivery fee preview (size, urgent flag, corridor). No side effects. |
-| POST | `/packages/request` | Create a delivery: cities, pickup/dropoff points, size, receiver name + phone, optional `urgent` (premium, immediate driver search). Rides the same matching engine as trips. |
+| POST | `/packages/request` | Create a delivery: cities, pickup/dropoff points, size, receiver name + phone, and either `isImmediate: true` (pickup in ~15–30 min) or `pickupDate` (ISO — **quarter-hour grid, ≥ 30 min, ≤ 30 days**, same rules as trips). Optional `urgent` (premium, solo trip, instant driver search). Packages group with other senders' packages (and passengers) on the same corridor, and a driver is assigned at T-30 exactly like trips. |
 | GET | `/packages/my-packages` | Paginated delivery history. |
 | GET | `/packages/active` | Current in-flight delivery, if any. |
 | GET | `/packages/{id}` | Full detail of one delivery incl. status timeline and the **deliveryCode** the sender relays to the recipient (the driver must be told it at handover). |

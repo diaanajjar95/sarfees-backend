@@ -12,5 +12,7 @@
   "No active package": "You have no active package delivery",
   "Not yours": "This delivery belongs to another account",
   "Already closed": "This delivery is already delivered or cancelled",
-  "With driver": "The parcel is already with the driver — contact support to arrange a return"
+  "With driver": "The parcel is already with the driver — contact support to arrange a return",
+  "Min 30 min ahead": "Scheduled pickups must be at least 30 minutes from now — choose a later time or use \"pickup now\"",
+  "Quarter hour": "Pickup time must be on a quarter-hour step (:00, :15, :30 or :45)"
 }

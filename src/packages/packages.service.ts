@@ -207,10 +207,18 @@ export class PackagesService {
       );
     }
 
-    // Pickup scheduling — mirrors TripsService.createRequest validation.
+    // Pickup scheduling — full parity with TripsService.createRequest
+    // so package groups behave exactly like passenger groups: an OPEN
+    // joining window, freeze at T-30, cascade to a driver.
     let pickupDate: Date;
     if (dto.isImmediate) {
-      pickupDate = new Date();
+      // "Now" = inside the configured now-window (15–30 min), same as
+      // trips. Departing literally NOW would be born past T-30 with
+      // zero grouping window and an instant (usually doomed) cascade.
+      const cfg = await this.matchingConfigService.getConfig();
+      const nowWindowMidMin =
+        (cfg.nowWindowMinMinutes + cfg.nowWindowMaxMinutes) / 2;
+      pickupDate = new Date(Date.now() + nowWindowMidMin * 60 * 1000);
     } else {
       if (!dto.pickupDate) {
         throw new BadRequestException(
@@ -222,6 +230,22 @@ export class PackagesService {
       if (pickupDate < now) {
         throw new BadRequestException(
           I18nContext.current()?.t('packages.Past date'),
+        );
+      }
+      // T-30 runway, same rule as trips.
+      const minLead = new Date(now.getTime() + 30 * 60 * 1000);
+      if (pickupDate < minLead) {
+        throw new BadRequestException(
+          I18nContext.current()?.t('packages.Min 30 min ahead'),
+        );
+      }
+      // Quarter-hour grid, same as the trip picker.
+      if (
+        pickupDate.getUTCMinutes() % 15 !== 0 ||
+        pickupDate.getUTCSeconds() !== 0
+      ) {
+        throw new BadRequestException(
+          I18nContext.current()?.t('packages.Quarter hour'),
         );
       }
       const thirtyDaysAhead = new Date();
