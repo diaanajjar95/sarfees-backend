@@ -1,0 +1,395 @@
+{
+  "info": {
+    "name": "Sarfees — Package Group (2 senders, one driver, T-30)",
+    "description": "Tests PACKAGE GROUPING end to end through the natural matching flow — no manual assignment. Two different senders book scheduled parcels on the same corridor; the engine bundles them into ONE trip group; at T-30 the group freezes and cascades to a driver, who collects both (cash at pickup, §6.1) and delivers each against its own 4-digit code + photo (§6.5).\n\n## How the timing works\n- Sender A books a parcel for the next quarter-hour slot at least 31 min out (pre-request script computes it; pickups must land on :00/:15/:30/:45 and be ≥ 30 min ahead — same rules as trips).\n- Sender B books the **next slot (+15 min)** — inside the 30-min package wait tolerance, so B joins A's group.\n- When the pickup time crosses T-30 (between ~1 and ~15 min after booking, depending on where the quarter-hour falls) the sweeper freezes the group and offers it to the top-ranked driver in the ORIGIN city.\n\n## Run order\n1. **Auth** — both senders + the driver (mock OTP `1234`) + admin.\n2. **Senders book** — A (SMALL) then B (MEDIUM, +15 min). Step 2.3 proves the bundle via the admin packages API: both rows carry the same `tripGroupId`.\n3. **Matching** — re-run 3.1 every ~30 s until `pendingOffer` appears. The offer countdown is 30 s — run 4.1 immediately.\n4. **Assign** — accept → manifest asserts ONE collection stop holding BOTH parcels with the combined cash expected (sender pays at pickup) and a delivery stop expecting 0.\n5. **Execute** — start → arrive → collect both (+cash) → arrive at delivery → wrong code → 400 (asserted!) → both correct codes + photos → complete (2 delivered) → each sender sees DELIVERED.\n\n## Prereqs\n- Package grouping parity build deployed (develop ≥ #41).\n- The default driver is Rania `770000005` (static Amman seed). The cascade offers whoever ranks best in the ORIGIN city — if another driver is online there, watch their account instead. Remember: a real driver app's GPS overrides seeded locations.\n- Senders `790000008` (Aya) + `790000010` (Karim); driver has no leftover active trip.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://169.58.67.105" },
+    { "key": "countryCode", "value": "+962" },
+    { "key": "otp", "value": "1234" },
+    { "key": "senderAPhone", "value": "790000008" },
+    { "key": "senderBPhone", "value": "790000010" },
+    { "key": "driverPhone", "value": "770000005" },
+    { "key": "adminEmail", "value": "admin@sarfees.com" },
+    { "key": "adminPassword", "value": "SarfeesAdmin2026!" },
+    { "key": "senderAToken", "value": "" },
+    { "key": "senderBToken", "value": "" },
+    { "key": "driverToken", "value": "" },
+    { "key": "adminToken", "value": "" },
+    { "key": "slotA", "value": "" },
+    { "key": "slotB", "value": "" },
+    { "key": "packageAId", "value": "" },
+    { "key": "packageACode", "value": "" },
+    { "key": "packageBId", "value": "" },
+    { "key": "packageBCode", "value": "" },
+    { "key": "tripId", "value": "" },
+    { "key": "pickupStopId", "value": "" },
+    { "key": "dropoffStopId", "value": "" },
+    { "key": "collectLinkA", "value": "" },
+    { "key": "collectLinkB", "value": "" },
+    { "key": "deliverLinkA", "value": "" },
+    { "key": "deliverLinkB", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth — senders, driver, admin",
+      "item": [
+        {
+          "name": "1.1 Sender A — request OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{senderAPhone}}\",\n  \"countryCode\": \"{{countryCode}}\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('OTP requested', () => pm.response.to.have.status(201));"] } }]
+        },
+        {
+          "name": "1.2 Sender A — verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/verify-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{senderAPhone}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"otp\": \"{{otp}}\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('senderAToken', d.accessToken);",
+            "pm.test('A token saved', () => pm.expect(d.accessToken).to.be.a('string'));"
+          ] } }]
+        },
+        {
+          "name": "1.3 Sender B — request OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{senderBPhone}}\",\n  \"countryCode\": \"{{countryCode}}\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('OTP requested', () => pm.response.to.have.status(201));"] } }]
+        },
+        {
+          "name": "1.4 Sender B — verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/verify-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{senderBPhone}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"otp\": \"{{otp}}\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('senderBToken', d.accessToken);",
+            "pm.test('B token saved', () => pm.expect(d.accessToken).to.be.a('string'));"
+          ] } }]
+        },
+        {
+          "name": "1.5 Driver — request OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/driver/request-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{driverPhone}}\",\n  \"countryCode\": \"{{countryCode}}\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('OTP requested', () => pm.response.to.have.status(201));"] } }]
+        },
+        {
+          "name": "1.6 Driver — verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/driver/verify-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{driverPhone}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"otp\": \"{{otp}}\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('driverToken', d.accessToken);",
+            "pm.test('driver token saved', () => pm.expect(d.accessToken).to.be.a('string'));"
+          ] } }]
+        },
+        {
+          "name": "1.7 Driver goes online in the ORIGIN city (Amman)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{driverToken}}" }
+            ],
+            "url": "{{baseUrl}}/drivers/activate",
+            "body": { "mode": "raw", "raw": "{\n  \"tripTypes\": [\"mixed\"],\n  \"goingHome\": false,\n  \"destinationCity\": \"Irbid\",\n  \"minPassengers\": 1,\n  \"currentLocationLat\": 31.9539,\n  \"currentLocationLng\": 35.9106\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.test('driver active', () => pm.expect(d.status).to.eql('active'));"
+          ] } }]
+        },
+        {
+          "name": "1.8 Admin — login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/admin/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('adminToken', d.accessToken);",
+            "pm.test('admin token saved', () => pm.expect(d.accessToken).to.be.a('string'));"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "2. Senders book — same corridor, adjacent slots",
+      "item": [
+        {
+          "name": "2.1 Sender A books SMALL at the next quarter slot",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{senderAToken}}" }
+            ],
+            "url": "{{baseUrl}}/packages/request",
+            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 1,\n  \"arrivalCityId\": 2,\n  \"pickupLocation\": { \"lat\": 31.9539, \"lng\": 35.9106 },\n  \"dropOffLocation\": { \"lat\": 32.5556, \"lng\": 35.8500 },\n  \"packageSize\": \"SMALL\",\n  \"weightKg\": 2,\n  \"packageDescription\": \"Documents envelope\",\n  \"receiverName\": \"Receiver One\",\n  \"receiverPhone\": \"0791112223\",\n  \"termsAccepted\": true,\n  \"isImmediate\": false,\n  \"pickupDate\": \"{{slotA}}\"\n}" },
+            "description": "Starts (or joins) the corridor group. Pickup must be a quarter-hour slot ≥ 30 min out."
+          },
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+              "const t = new Date(Date.now() + 31 * 60 * 1000);",
+              "t.setUTCSeconds(0, 0);",
+              "const rem = t.getUTCMinutes() % 15;",
+              "if (rem !== 0) t.setUTCMinutes(t.getUTCMinutes() + (15 - rem));",
+              "pm.collectionVariables.set('slotA', t.toISOString());",
+              "pm.collectionVariables.set('slotB', new Date(t.getTime() + 15 * 60 * 1000).toISOString());",
+              "console.log('Slot A =', t.toISOString(), '| Slot B = +15 min. Freeze fires at slot A - 30 min.');"
+            ] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const d = pm.response.json().data ?? pm.response.json();",
+              "pm.collectionVariables.set('packageAId', d.id);",
+              "pm.collectionVariables.set('packageACode', d.deliveryCode);",
+              "pm.test('A created with deliveryCode', () => pm.expect(d.deliveryCode).to.match(/^\\d{4}$/));",
+              "console.log('Package A =', d.id, '| code', d.deliveryCode);"
+            ] } }
+          ]
+        },
+        {
+          "name": "2.2 Sender B books MEDIUM at slot +15 min",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{senderBToken}}" }
+            ],
+            "url": "{{baseUrl}}/packages/request",
+            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 1,\n  \"arrivalCityId\": 2,\n  \"pickupLocation\": { \"lat\": 31.9560, \"lng\": 35.9080 },\n  \"dropOffLocation\": { \"lat\": 32.5530, \"lng\": 35.8530 },\n  \"packageSize\": \"MEDIUM\",\n  \"weightKg\": 4,\n  \"packageDescription\": \"Gift box\",\n  \"receiverName\": \"Receiver Two\",\n  \"receiverPhone\": \"0794445556\",\n  \"termsAccepted\": true,\n  \"isImmediate\": false,\n  \"pickupDate\": \"{{slotB}}\"\n}" },
+            "description": "15 minutes after A — inside the 30-min package wait tolerance, so it joins A's group."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('packageBId', d.id);",
+            "pm.collectionVariables.set('packageBCode', d.deliveryCode);",
+            "pm.test('B created with deliveryCode', () => pm.expect(d.deliveryCode).to.match(/^\\d{4}$/));"
+          ] } }]
+        },
+        {
+          "name": "2.3 GROUPING PROOF — both parcels share one tripGroupId",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/admin/packages?limit=10",
+            "description": "The admin packages API exposes tripGroupId — both rows must carry the same group."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "const aId = Number(pm.collectionVariables.get('packageAId'));",
+            "const bId = Number(pm.collectionVariables.get('packageBId'));",
+            "const a = d.data.find(p => p.id === aId);",
+            "const b = d.data.find(p => p.id === bId);",
+            "pm.test('both parcels found', () => { pm.expect(a, 'A row').to.exist; pm.expect(b, 'B row').to.exist; });",
+            "pm.test('GROUPED: same tripGroupId', () => {",
+            "  pm.expect(a.tripGroupId, 'A group').to.be.a('number');",
+            "  pm.expect(a.tripGroupId, 'same group').to.eql(b.tripGroupId);",
+            "});",
+            "console.log('Both parcels in trip group', a.tripGroupId, '— two different senders, one group.');"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "3. Matching — wait for the T-30 offer",
+      "item": [
+        {
+          "name": "3.1 Poll driver home-summary → pendingOffer (re-run until pass)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/home-summary",
+            "description": "The group freezes when slot A crosses T-30 (up to ~15 min after booking). RE-RUN every ~30 s until the test passes. The offer expires in 30 s — run 4.1 immediately after it appears."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "const offer = d.pendingOffer;",
+            "if (offer) {",
+            "  pm.collectionVariables.set('tripId', offer.tripId);",
+            "  console.log('OFFER! trip', offer.tripId, '—', offer.secondsRemaining, 's left. Run 4.1 NOW.');",
+            "} else {",
+            "  console.log('No offer yet — freeze fires at T-30, sweeper ticks every 30 s. Re-run.');",
+            "}",
+            "pm.test('pendingOffer present (re-run until it passes)', () => pm.expect(offer, 'pendingOffer').to.exist);"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "4. Assign — accept, verify the bundle",
+      "item": [
+        {
+          "name": "4.1 Accept → one collection stop, both parcels, cash at pickup",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/accept"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.test('accepted', () => pm.expect(d.status).to.eql('accepted'));",
+            "const stops = d.stops.sort((a, b) => a.order - b.order);",
+            "const pickup = stops.find(s => s.type === 'pickup');",
+            "const dropoff = stops.find(s => s.type === 'dropoff');",
+            "pm.collectionVariables.set('pickupStopId', pickup.id);",
+            "pm.collectionVariables.set('dropoffStopId', dropoff.id);",
+            "pm.test('BOTH parcels on one collection stop', () => pm.expect(pickup.packages.length).to.eql(2));",
+            "pm.test('cash expected at pickup (§6.1), zero at delivery', () => {",
+            "  pm.expect(pickup.cashExpected).to.be.above(0);",
+            "  pm.expect(dropoff.cashExpected).to.eql(0);",
+            "});",
+            "const aId = Number(pm.collectionVariables.get('packageAId'));",
+            "const bId = Number(pm.collectionVariables.get('packageBId'));",
+            "const byPkg = (arr, id) => arr.find(p => p.reference === `PKG-${id}`);",
+            "pm.collectionVariables.set('collectLinkA', byPkg(pickup.packages, aId).id);",
+            "pm.collectionVariables.set('collectLinkB', byPkg(pickup.packages, bId).id);",
+            "pm.collectionVariables.set('deliverLinkA', byPkg(dropoff.packages, aId).id);",
+            "pm.collectionVariables.set('deliverLinkB', byPkg(dropoff.packages, bId).id);",
+            "console.log('Wired. Pickup stop', pickup.id, 'cash', pickup.cashExpected, '| dropoff', dropoff.id);"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "5. Execute — collect both, deliver with OTPs",
+      "item": [
+        {
+          "name": "5.1 Start trip",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/start"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('started', () => pm.response.to.be.success);"] } }]
+        },
+        {
+          "name": "5.2 Arrive at collection stop",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/stops/{{pickupStopId}}/arrive"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('arrived', () => pm.response.to.be.success);"] } }]
+        },
+        {
+          "name": "5.3 Collect BOTH parcels — senders pay here",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{driverToken}}" }
+            ],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/stops/{{pickupStopId}}/confirm-pickup",
+            "body": { "mode": "raw", "raw": "{\n  \"packagesCollected\": [{{collectLinkA}}, {{collectLinkB}}]\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('both collected, cash charged', () => pm.response.to.be.success);"] } }]
+        },
+        {
+          "name": "5.4 Arrive at delivery stop",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/stops/{{dropoffStopId}}/arrive"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('arrived', () => pm.response.to.be.success);"] } }]
+        },
+        {
+          "name": "5.5 Wrong code for A → 400 (expected!)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{driverToken}}" }
+            ],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/stops/{{dropoffStopId}}/confirm-dropoff",
+            "body": { "mode": "raw", "raw": "{\n  \"packagesDelivered\": [\n    { \"id\": {{deliverLinkA}}, \"deliveryCode\": \"0000\" },\n    { \"id\": {{deliverLinkB}}, \"deliveryCode\": \"{{packageBCode}}\" }\n  ]\n}" },
+            "description": "A wrong recipient code must block the whole confirm. Green test = API returned 400."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('wrong code rejected with 400', () => pm.response.to.have.status(400));"
+          ] } }]
+        },
+        {
+          "name": "5.6 Deliver BOTH with correct codes + photos",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{driverToken}}" }
+            ],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/stops/{{dropoffStopId}}/confirm-dropoff",
+            "body": { "mode": "raw", "raw": "{\n  \"packagesDelivered\": [\n    { \"id\": {{deliverLinkA}}, \"deliveryCode\": \"{{packageACode}}\", \"photoUrl\": \"/uploads/handover-a.jpg\" },\n    { \"id\": {{deliverLinkB}}, \"deliveryCode\": \"{{packageBCode}}\", \"photoUrl\": \"/uploads/handover-b.jpg\" }\n  ]\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('both delivered', () => pm.response.to.be.success);"] } }]
+        },
+        {
+          "name": "5.7 Complete → 2 delivered, cash from pickup",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/complete"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.test('completed', () => pm.response.to.be.success);",
+            "pm.test('2 parcels delivered', () => pm.expect(d.packagesDelivered).to.eql(2));",
+            "pm.test('cash collected (charged at pickup)', () => pm.expect(d.totalCashCollected).to.be.above(0));",
+            "console.log('Earnings:', JSON.stringify(d, null, 2));"
+          ] } }]
+        },
+        {
+          "name": "5.8 Sender A sees DELIVERED + photo",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{senderAToken}}" }],
+            "url": "{{baseUrl}}/packages/{{packageAId}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.test('A DELIVERED', () => pm.expect(d.status).to.eql('DELIVERED'));",
+            "pm.test('handover photo stored', () => pm.expect(d.deliveredPhotoUrl).to.be.a('string'));"
+          ] } }]
+        },
+        {
+          "name": "5.9 Sender B sees DELIVERED + photo",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{senderBToken}}" }],
+            "url": "{{baseUrl}}/packages/{{packageBId}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.test('B DELIVERED', () => pm.expect(d.status).to.eql('DELIVERED'));",
+            "pm.test('handover photo stored', () => pm.expect(d.deliveredPhotoUrl).to.be.a('string'));"
+          ] } }]
+        }
+      ]
+    }
+  ]
+}
