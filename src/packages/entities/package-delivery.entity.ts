@@ -89,6 +89,14 @@ export class PackageDelivery {
   @ManyToOne(() => TripGroup, { nullable: true })
   tripGroup: TripGroup | null;
 
+  /** Why the delivery was cancelled; ops-entered for admin cancels. */
+  @Column({ type: 'text', nullable: true })
+  cancellationReason: string | null;
+
+  /** Admin who cancelled this delivery, when ops-initiated. */
+  @Column({ type: 'int', nullable: true })
+  cancelledByAdminId: number | null;
+
   @CreateDateColumn()
   createdAt: Date;
 
