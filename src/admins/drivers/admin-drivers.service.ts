@@ -180,7 +180,7 @@ export class AdminDriversService {
 
     const qb = this.driversRepo
       .createQueryBuilder('d')
-      .orderBy('d.createdAt', 'DESC');
+      .orderBy('d.id', 'DESC');
 
     if (query.status) {
       qb.andWhere('d.status = :status', { status: query.status });
@@ -226,7 +226,7 @@ export class AdminDriversService {
 
     const recentTrips = await this.tripsRepo.find({
       where: { driver: { id } },
-      order: { createdAt: 'DESC' },
+      order: { id: 'DESC' },
       take: 50,
     });
     const completed = recentTrips.filter(
@@ -249,7 +249,7 @@ export class AdminDriversService {
 
     const declineRows = await this.declineLogRepo.find({
       where: { driver: { id } },
-      order: { declinedAt: 'DESC' },
+      order: { id: 'DESC' },
       take: 50,
     });
     const declineLog: DriverDeclineLogRowDto[] = declineRows.map((r) => ({

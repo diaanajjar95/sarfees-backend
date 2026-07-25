@@ -44,17 +44,12 @@ export class AdminTripGroupsService {
       .leftJoinAndSelect('g.destCity', 'dc');
 
     if (statusFilter === 'unassigned') {
-      qb.where('g.status IN (:...sts)', { sts: UNASSIGNED_STATUSES })
-        // Soonest-departing first — that's the one ops must watch.
-        .orderBy('g.departureTime', 'ASC');
-    } else if (statusFilter === 'all') {
-      qb.orderBy('g.createdAt', 'DESC');
-    } else {
-      qb.where('g.status = :st', { st: statusFilter }).orderBy(
-        'g.departureTime',
-        'ASC',
-      );
+      qb.where('g.status IN (:...sts)', { sts: UNASSIGNED_STATUSES });
+    } else if (statusFilter !== 'all') {
+      qb.where('g.status = :st', { st: statusFilter });
     }
+    // Portal-wide convention: newest records first.
+    qb.orderBy('g.id', 'DESC');
 
     const [rows, totalItems] = await qb
       .skip((page - 1) * limit)

@@ -37,7 +37,7 @@ export class AdminEscalationsService {
     const [rows, total] = await this.escalationsRepo.findAndCount({
       where,
       relations: ['tripGroup', 'tripGroup.originCity', 'tripGroup.destCity'],
-      order: { escalatedAt: 'DESC' },
+      order: { id: 'DESC' },
       skip: (page - 1) * limit,
       take: limit,
     });

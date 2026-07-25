@@ -98,7 +98,7 @@ export class AdminPassengerRequestsService {
         'd.id',
         'd.name',
       ])
-      .orderBy('t.createdAt', 'DESC');
+      .orderBy('t.id', 'DESC');
 
     if (query.status) qb.andWhere('t.status = :s', { s: query.status });
     if (query.fromDate)
