@@ -618,18 +618,36 @@ export class DriverTripsService {
     }
 
     const boarding = await this.stopPassengersRepo.find({
-      where: { stop: { id: stop.id }, role: StopPassengerRole.BOARDING },
+      where: {
+        stop: { id: stop.id },
+        role: StopPassengerRole.BOARDING,
+        status: StopPassengerStatus.PENDING,
+      },
       relations: ['tripRequest'],
     });
     const collecting = await this.stopPackagesRepo.find({
-      where: { stop: { id: stop.id }, role: StopPackageRole.COLLECTING },
+      where: {
+        stop: { id: stop.id },
+        role: StopPackageRole.COLLECTING,
+        status: StopPackageStatus.PENDING,
+      },
       relations: ['packageDelivery'],
     });
 
     const pickedSet = new Set(dto.passengersPickedUp ?? []);
     const noShowSet = new Set(dto.noShows ?? []);
     const collectedSet = new Set(dto.packagesCollected ?? []);
-    const notFoundSet = new Set(dto.packagesNotFound ?? []);
+    const refusalByLink = new Map(
+      (dto.packagesRefused ?? []).map((r) => [r.id, r]),
+    );
+    // §6.7 sender no-show and §6.4 refusal both leave the package
+    // behind, but for different reasons with different consequences —
+    // fold refusals into the not-found bucket only for the
+    // completeness check.
+    const notFoundSet = new Set([
+      ...(dto.packagesNotFound ?? []),
+      ...refusalByLink.keys(),
+    ]);
 
     this.validateAllResolved(
       boarding.map((p) => p.id),
@@ -669,22 +687,86 @@ export class DriverTripsService {
         if (isPicked) pickedUpRequestIds.push(link.tripRequest.id);
         else noShowRequestIds.push(link.tripRequest.id);
       }
+      let packageCashAtStop = 0;
       for (const link of collecting) {
         const collected = collectedSet.has(link.id);
-        link.status = collected
-          ? StopPackageStatus.COLLECTED
-          : StopPackageStatus.NOT_FOUND;
+        const refusal = refusalByLink.get(link.id);
+        if (collected) {
+          link.status = StopPackageStatus.COLLECTED;
+          // §6.1 — the sender pays at pickup.
+          packageCashAtStop += Number(link.fee);
+        } else if (refusal) {
+          // §6.4 — logged with reason; sender not charged; never a
+          // decline penalty.
+          link.status = StopPackageStatus.REFUSED;
+          link.refusalReason = refusal.reason;
+          link.refusalPhotoUrl = (refusal.photoUrl ?? null) as string;
+        } else {
+          link.status = StopPackageStatus.NOT_FOUND;
+        }
         link.confirmedAt = now;
         await mgr.save(link);
         await mgr.update(
           PackageDelivery,
           { id: link.packageDelivery.id },
-          {
-            status: collected ? PackageStatus.PICKED_UP : PackageStatus.CANCELLED,
-          },
+          collected
+            ? { status: PackageStatus.PICKED_UP }
+            : {
+                status: PackageStatus.CANCELLED,
+                cancellationReason: refusal
+                  ? `Refused at pickup by driver: ${refusal.reason}${refusal.notes ? ` — ${refusal.notes}` : ''}`
+                  : 'Sender no-show at pickup',
+              },
         );
         if (collected) collectedPackageIds.push(link.packageDelivery.id);
         else notFoundPackageIds.push(link.packageDelivery.id);
+      }
+
+      if (packageCashAtStop > 0) {
+        await mgr.increment(
+          DriverTrip,
+          { id: trip.id },
+          'totalCashCollected',
+          packageCashAtStop,
+        );
+      }
+
+      // Anyone/anything that never entered the vehicle can't be
+      // dropped off — resolve their downstream links now so the
+      // dropoff stops don't demand action on them.
+      if (noShowRequestIds.length) {
+        await mgr
+          .createQueryBuilder()
+          .update(DriverTripStopPassenger)
+          .set({ status: StopPassengerStatus.NO_SHOW, confirmedAt: now })
+          .where('"tripRequestId" IN (:...ids)', { ids: noShowRequestIds })
+          .andWhere('role = :role', { role: StopPassengerRole.ALIGHTING })
+          .andWhere('status = :pending', {
+            pending: StopPassengerStatus.PENDING,
+          })
+          .andWhere(
+            '"stopId" IN (SELECT id FROM driver_trip_stops WHERE "tripId" = :tripId)',
+            { tripId: trip.id },
+          )
+          .execute();
+      }
+      if (notFoundPackageIds.length) {
+        await mgr
+          .createQueryBuilder()
+          .update(DriverTripStopPackage)
+          .set({ status: StopPackageStatus.NOT_FOUND, confirmedAt: now })
+          .where('"packageDeliveryId" IN (:...ids)', {
+            ids: notFoundPackageIds,
+          })
+          .andWhere('role = :role', { role: StopPackageRole.DELIVERING })
+          .andWhere('status = :pending', {
+            pending: StopPackageStatus.PENDING,
+          })
+          .andWhere(
+            '"stopId" IN (SELECT id FROM driver_trip_stops WHERE "tripId" = :tripId)',
+            { tripId: trip.id },
+          )
+          .execute();
       }
 
       stop.status = DriverTripStopStatus.CONFIRMED;
@@ -792,11 +874,19 @@ export class DriverTripsService {
     }
 
     const alighting = await this.stopPassengersRepo.find({
-      where: { stop: { id: stop.id }, role: StopPassengerRole.ALIGHTING },
+      where: {
+        stop: { id: stop.id },
+        role: StopPassengerRole.ALIGHTING,
+        status: StopPassengerStatus.PENDING,
+      },
       relations: ['tripRequest'],
     });
     const delivering = await this.stopPackagesRepo.find({
-      where: { stop: { id: stop.id }, role: StopPackageRole.DELIVERING },
+      where: {
+        stop: { id: stop.id },
+        role: StopPackageRole.DELIVERING,
+        status: StopPackageStatus.PENDING,
+      },
       relations: ['packageDelivery'],
     });
 
@@ -815,7 +905,10 @@ export class DriverTripsService {
       }
     }
 
-    const deliveredSet = new Set(dto.packagesDelivered ?? []);
+    const deliveredEntries = new Map(
+      (dto.packagesDelivered ?? []).map((e) => [e.id, e]),
+    );
+    const deliveredSet = new Set(deliveredEntries.keys());
     const failures = dto.deliveryFailures ?? [];
     const failedIds = new Set(failures.map((f) => f.id));
     this.validateAllResolved(
@@ -858,13 +951,24 @@ export class DriverTripsService {
       for (const link of delivering) {
         const delivered = deliveredSet.has(link.id);
         if (delivered) {
+          const entry = deliveredEntries.get(link.id)!;
+          // §6.5 — the recipient-held code must match. Wrong code =
+          // wrong recipient; the driver must not hand the parcel over.
+          const expected = link.packageDelivery.deliveryCode;
+          if (expected && entry.deliveryCode !== expected) {
+            throw new BadRequestException(
+              `Wrong delivery code for package stop item #${link.id}`,
+            );
+          }
           link.status = StopPackageStatus.DELIVERED;
-          cashAddedAtStop += Number(link.fee);
-          cashAddedTotal += Number(link.fee);
+          // No cash here — the sender paid at pickup (§6.1).
           await mgr.update(
             PackageDelivery,
             { id: link.packageDelivery.id },
-            { status: PackageStatus.DELIVERED },
+            {
+              status: PackageStatus.DELIVERED,
+              deliveredPhotoUrl: (entry.photoUrl ?? null) as string,
+            },
           );
           deliveredPackageIds.push(link.packageDelivery.id);
         } else {
@@ -1380,12 +1484,13 @@ export class DriverTripsService {
       );
     }
 
-    const tripRequests = dto.tripRequestIds.length
+    const tripRequestIds = dto.tripRequestIds ?? [];
+    const tripRequests = tripRequestIds.length
       ? await this.tripRequestsRepo.find({
-          where: { id: In(dto.tripRequestIds) },
+          where: { id: In(tripRequestIds) },
         })
       : [];
-    if (tripRequests.length !== dto.tripRequestIds.length) {
+    if (tripRequests.length !== tripRequestIds.length) {
       throw new NotFoundException('One or more TripRequests not found');
     }
 
@@ -1452,7 +1557,9 @@ export class DriverTripsService {
             lat: dto.pickupLat,
             lng: dto.pickupLng,
             status: DriverTripStopStatus.PENDING,
-            cashExpected: 0,
+            // §6.1 — the sender pays at pickup, so the package cash is
+            // expected here, not at the delivery stop.
+            cashExpected: totalPackageCash,
           }),
         );
         for (const pkg of packages) {
@@ -1533,7 +1640,8 @@ export class DriverTripsService {
             lat: dto.dropoffLat,
             lng: dto.dropoffLng,
             status: DriverTripStopStatus.PENDING,
-            cashExpected: totalPackageCash,
+            // Cash already collected at pickup (§6.1).
+            cashExpected: 0,
           }),
         );
         for (const pkg of packages) {

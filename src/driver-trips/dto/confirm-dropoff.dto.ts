@@ -42,6 +42,27 @@ export class PackageDeliveryFailureEntryDto {
   notes?: string;
 }
 
+/** §6.5 — OTP + photo close the delivery in both directions. */
+export class PackageDeliveredEntryDto {
+  @ApiProperty({ example: 201, description: 'stop_package row id' })
+  @IsInt()
+  id: number;
+
+  @ApiProperty({
+    example: '4821',
+    description: 'Delivery code the recipient tells the driver (§6.5)',
+  })
+  @IsString()
+  deliveryCode: string;
+
+  @ApiPropertyOptional({
+    description: "Driver's photo of the handed-over package",
+  })
+  @IsOptional()
+  @IsString()
+  photoUrl?: string;
+}
+
 export class ConfirmDropoffDto {
   @ApiProperty({
     description: 'Passenger dropoffs with cash status. Each id must be a stop_passenger row.',
@@ -54,15 +75,15 @@ export class ConfirmDropoffDto {
   passengersDroppedOff?: PassengerDropoffEntryDto[];
 
   @ApiProperty({
-    description: 'IDs of stop_package rows successfully delivered',
-    example: [201],
-    type: [Number],
+    description:
+      'Packages successfully delivered — each needs the recipient-held delivery code (§6.5). Cash was already collected at pickup.',
+    type: [PackageDeliveredEntryDto],
   })
   @IsOptional()
   @IsArray()
-  @IsInt({ each: true })
-  @ArrayUnique()
-  packagesDelivered?: number[];
+  @ValidateNested({ each: true })
+  @Type(() => PackageDeliveredEntryDto)
+  packagesDelivered?: PackageDeliveredEntryDto[];
 
   @ApiProperty({
     description: 'Packages that could not be delivered, with reason',

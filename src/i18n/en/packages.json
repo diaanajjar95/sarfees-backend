@@ -9,5 +9,8 @@
   "Pickup date required": "pickupDate is required when isImmediate is false",
   "Past date": "Pickup date cannot be in the past",
   "Max 30 days": "Pickup date cannot be more than 30 days ahead",
-  "No active package": "You have no active package delivery"
+  "No active package": "You have no active package delivery",
+  "Not yours": "This delivery belongs to another account",
+  "Already closed": "This delivery is already delivered or cancelled",
+  "With driver": "The parcel is already with the driver — contact support to arrange a return"
 }
