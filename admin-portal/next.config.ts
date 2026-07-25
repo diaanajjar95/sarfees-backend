@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
   // Standalone output — the production Dockerfile only needs .next/standalone
   // + .next/static + public/, no node_modules copy. ~10x smaller image.
   output: 'standalone',
+  // The public marketing page ships as a static bundle under
+  // public/landing/ (temporary home until it moves to its own project).
+  async rewrites() {
+    return [{ source: '/landing', destination: '/landing/index.html' }];
+  },
 };
 
 export default nextConfig;
