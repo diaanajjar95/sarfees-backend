@@ -158,7 +158,7 @@ h1, h2, h3 { line-height: var(--lh-tight); color: var(--color-text-primary); }
   font-size: var(--text-sm); font-weight: var(--fw-extrabold);
   padding: 7px 14px; border-radius: var(--r-pill); margin-bottom: 22px;
 }
-.hero-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-green); }
+.hero-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-primary); }
 .hero h1 { margin-bottom: 20px; }
 .hero .lead { max-width: 520px; margin-bottom: 30px; }
 .hero-actions { display: flex; flex-direction: column; gap: 18px; }

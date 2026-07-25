@@ -13,7 +13,7 @@ const I18N = {
   "nav.cta":     { en: "Get the app", ar: "حمّل التطبيق" },
 
   // ---- HERO ----
-  "hero.badge":  { en: "Now live in Jordan &amp; Syria", ar: "متوفّر الآن في الأردن وسوريا" },
+  "hero.badge":  { en: "Coming soon in Jordan", ar: "قريباً في الأردن" },
   "hero.title":  { en: "Smart rides for the <span class='text-amber'>Arab world</span>", ar: "تنقّل ذكي <span class='text-amber'>للعالم العربي</span>" },
   "hero.lead":   { en: "Book a Standard ride, a Women-Only trip, or send a package — all from one app. Reliable drivers and fair, upfront prices, in Arabic and English.", ar: "احجز رحلة عادية، أو رحلة للنساء فقط، أو أرسل طرداً — كل ذلك من تطبيق واحد. سائقون موثوقون وأسعار عادلة وواضحة، بالعربية والإنجليزية." },
   "hero.rating": { en: "Rated <b>4.9</b> by 50,000+ riders", ar: "تقييم <b>٤٫٩</b> من أكثر من ٥٠٬٠٠٠ راكب" },
@@ -130,7 +130,7 @@ const I18N = {
 
   // ---- COVERAGE ----
   "cv.eyebrow": { en: "Where we drive", ar: "أين نعمل" },
-  "cv.title":   { en: "Live across Jordan &amp; Syria", ar: "نعمل في الأردن وسوريا" },
+  "cv.title":   { en: "Live across Jordan", ar: "نعمل في الأردن" },
   "cv.lead":    { en: "Starting in the region's busiest cities — and expanding fast.", ar: "نبدأ من أكثر مدن المنطقة ازدحاماً — ونتوسّع بسرعة." },
   "cv.live":    { en: "Live", ar: "متوفّر" },
   "cv.soon":    { en: "Coming soon", ar: "قريباً" },
@@ -138,12 +138,6 @@ const I18N = {
   "cv.c1s": { en: "Jordan", ar: "الأردن" },
   "cv.c2": { en: "Irbid", ar: "إربد" },
   "cv.c2s": { en: "Jordan", ar: "الأردن" },
-  "cv.c3": { en: "Zarqa", ar: "الزرقاء" },
-  "cv.c3s": { en: "Jordan", ar: "الأردن" },
-  "cv.c4": { en: "Damascus", ar: "دمشق" },
-  "cv.c4s": { en: "Syria", ar: "سوريا" },
-  "cv.c5": { en: "Aleppo", ar: "حلب" },
-  "cv.c5s": { en: "Syria", ar: "سوريا" },
 
   // ---- DRIVER ----
   "dr.eyebrow": { en: "Drive with Sarfees", ar: "قُد مع سرفيس" },
@@ -172,7 +166,7 @@ const I18N = {
   "faq.eyebrow": { en: "Questions", ar: "أسئلة" },
   "faq.title":   { en: "Frequently asked", ar: "الأسئلة الشائعة" },
   "faq.1.q": { en: "Where is Sarfees available?", ar: "أين يتوفّر سرفيس؟" },
-  "faq.1.a": { en: "Sarfees is live in Amman, Irbid, and Damascus, with more cities across Jordan and Syria launching soon.", ar: "سرفيس متوفّر في عمّان وإربد ودمشق، ومدن أخرى في الأردن وسوريا قريباً." },
+  "faq.1.a": { en: "Sarfees is live in Amman and Irbid, with more cities across Jordan launching soon.", ar: "سرفيس متوفّر في عمّان وإربد، ومدن أخرى في الأردن قريباً." },
   "faq.2.q": { en: "How is the fare calculated?", ar: "كيف تُحسب الأجرة؟" },
   "faq.2.a": { en: "You see the full price upfront before you confirm — based on distance and time, with no hidden surge fees.", ar: "ترى السعر الكامل مسبقاً قبل التأكيد — بناءً على المسافة والوقت، دون رسوم خفية." },
   "faq.3.q": { en: "What is a Women-Only ride?", ar: "ما هي رحلة النساء فقط؟" },
