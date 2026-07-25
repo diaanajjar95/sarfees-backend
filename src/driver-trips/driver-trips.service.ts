@@ -986,6 +986,18 @@ export class DriverTripsService {
       trip.netEarnings = netEarnings;
       await mgr.save(trip);
 
+      // Close the linked Stage-1 group too (master spec §11:
+      // IN_PROGRESS → COMPLETED). Without this the group sat at
+      // 'assigned' forever and cluttered the admin groups page.
+      await mgr.query(
+        `UPDATE trip_groups g SET status = 'completed', "completedAt" = $2
+         WHERE g.id IN (
+           SELECT DISTINCT "tripGroupId" FROM trip_offer_history
+           WHERE "driverTripId" = $1 AND "tripGroupId" IS NOT NULL
+         ) AND g.status NOT IN ('completed', 'cancelled')`,
+        [trip.id, now],
+      );
+
       // Driver returns to inactive (must re-activate for next session per spec)
       // and accumulates the platform's commission as outstanding balance.
       const driver = await mgr.findOne(Driver, { where: { id: driverId } });

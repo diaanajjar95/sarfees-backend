@@ -23,6 +23,7 @@ import { AdminDriversModule } from './admins/drivers/admin-drivers.module';
 import { AdminTripsModule } from './admins/trips/admin-trips.module';
 import { AdminEarningsModule } from './admins/earnings/admin-earnings.module';
 import { AdminPassengerRequestsModule } from './admins/passenger-requests/admin-passenger-requests.module';
+import { AdminTripGroupsModule } from './admins/trip-groups/admin-trip-groups.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import { FaqModule } from './faq/faq.module';
 import { MapModule } from './shared/map/map.module';
@@ -92,6 +93,7 @@ import * as path from 'path';
     AdminTripsModule,
     AdminEarningsModule,
     AdminPassengerRequestsModule,
+    AdminTripGroupsModule,
     AnnouncementsModule,
     FaqModule,
     MapModule,
