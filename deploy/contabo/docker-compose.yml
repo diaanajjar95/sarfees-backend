@@ -17,6 +17,7 @@ services:
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
+      TZ: Asia/Amman
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # Mount for pg_dump restore work — see 04-restore-db.sh
@@ -48,6 +49,9 @@ services:
       DB_NAME: ${DB_NAME}
       DB_SSL: "false"
       NODE_ENV: production
+      # Jordan time everywhere server-side: logs, naive-timestamp
+      # handling, date math. API JSON still serializes ISO-UTC (Z).
+      TZ: Asia/Amman
       PORT: "3000"
       # All other config comes from .env (JWT secrets, thresholds,
       # support contacts, app-init version fields, etc.)
@@ -83,6 +87,8 @@ services:
       # and then be dropped — flip this to "true" the moment the site
       # is behind HTTPS (named-domain Caddy block).
       COOKIE_SECURE: "false"
+      # Server-rendered dates in the portal display in Jordan time.
+      TZ: Asia/Amman
       PORT: "3001"
     networks:
       - sarfees-net
