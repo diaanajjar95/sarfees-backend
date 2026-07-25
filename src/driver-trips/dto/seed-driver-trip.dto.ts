@@ -78,12 +78,17 @@ export class SeedDriverTripDto {
   @IsString()
   dropoffAddress?: string;
 
-  @ApiProperty({ type: [Number], example: [1] })
+  @ApiPropertyOptional({
+    type: [Number],
+    example: [1],
+    description:
+      'May be empty for packages-only trips — at least one request OR package must be provided.',
+  })
+  @IsOptional()
   @IsArray()
-  @ArrayNotEmpty()
   @IsInt({ each: true })
   @ArrayUnique()
-  tripRequestIds: number[];
+  tripRequestIds?: number[];
 
   @ApiPropertyOptional({ type: [Number], example: [] })
   @IsOptional()

@@ -56,11 +56,13 @@ token, then retry.
 
 | Method | Path | Description |
 |---|---|---|
+| GET | `/packages/prohibited-items` | Bilingual prohibited-items list — show it next to the legal attestation checkbox on the request screen. |
 | POST | `/packages/estimate` | Delivery fee preview (size, urgent flag, corridor). No side effects. |
 | POST | `/packages/request` | Create a delivery: cities, pickup/dropoff points, size, receiver name + phone, optional `urgent` (premium, immediate driver search). Rides the same matching engine as trips. |
 | GET | `/packages/my-packages` | Paginated delivery history. |
 | GET | `/packages/active` | Current in-flight delivery, if any. |
-| GET | `/packages/{id}` | Full detail of one delivery incl. status timeline. |
+| GET | `/packages/{id}` | Full detail of one delivery incl. status timeline and the **deliveryCode** the sender relays to the recipient (the driver must be told it at handover). |
+| POST | `/packages/{id}/cancel` | Sender cancel. Free while `PENDING`; after a driver is assigned the response carries `cancellationFeeApplies: true`; blocked once the parcel is with the driver (ops return flow — contact support). |
 
 ## Passenger — notifications
 
@@ -114,8 +116,8 @@ Screen refs (S-07…S-14) match the design file. Typical order: offer push →
 | POST | `/drivers/trips/{id}/start` | Begin the trip (S-09 → S-10). Only from `accepted`. |
 | GET | `/drivers/trips/{id}/active-state` | Current + next stop, progress counters — the in-trip screen's source of truth. Re-fetch after every stop action. |
 | POST | `/drivers/trips/{id}/stops/{stopId}/arrive` | Mark arrival at the current stop; passengers at that stop get notified. |
-| POST | `/drivers/trips/{id}/stops/{stopId}/confirm-pickup` | Body `{ passengersPickedUp: [stopPassengerRowIds], noShows: [], packagesCollected: [], packagesNotFound: [] }` — ids come from the manifest/active-state. |
-| POST | `/drivers/trips/{id}/stops/{stopId}/confirm-dropoff` | Body `{ passengersDroppedOff: [{ id, cashCollected }], packagesDelivered: [], deliveryFailures: [] }`. Records the cash per passenger. |
+| POST | `/drivers/trips/{id}/stops/{stopId}/confirm-pickup` | Body `{ passengersPickedUp: [...], noShows: [], packagesCollected: [...], packagesNotFound: [...], packagesRefused: [{ id, reason, photoUrl?, notes? }] }`. **Package cash is collected here** (sender pays at pickup). Refusals (`not_as_declared` / `suspicious` / `prohibited_item` / `oversized` / `other`) are logged and never count against the driver; not-found = sender no-show. |
+| POST | `/drivers/trips/{id}/stops/{stopId}/confirm-dropoff` | Body `{ passengersDroppedOff: [{ id, cashCollected }], packagesDelivered: [{ id, deliveryCode, photoUrl? }], deliveryFailures: [] }`. Passenger cash is recorded here; **package delivery requires the recipient's 4-digit code** (wrong code → 400) plus an optional handover photo. Package cash was already taken at pickup. |
 | POST | `/drivers/trips/{id}/complete` | Finalize after the last stop. Returns the earnings breakdown (cash, commission, net) for the S-13 screen. Also releases the driver for new offers. |
 | POST | `/drivers/trips/{id}/cancel` | Cancel an accepted/started trip with reason. Zone rules: before start = no penalty; after start (no pickups yet) = soft penalty + auto-offline; **blocked entirely once a passenger is picked up**. |
 

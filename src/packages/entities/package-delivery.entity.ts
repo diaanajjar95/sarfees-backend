@@ -89,6 +89,18 @@ export class PackageDelivery {
   @ManyToOne(() => TripGroup, { nullable: true })
   tripGroup: TripGroup | null;
 
+  /**
+   * 4-digit delivery confirmation code (§6.5). Sent to the recipient
+   * (SMS mocked for now — the sender sees it in the app and relays);
+   * the driver must present it back at handover.
+   */
+  @Column({ type: 'varchar', length: 8, nullable: true })
+  deliveryCode: string | null;
+
+  /** Driver's photo of the handed-over package (§6.5). */
+  @Column({ type: 'text', nullable: true })
+  deliveredPhotoUrl: string | null;
+
   /** Why the delivery was cancelled; ops-entered for admin cancels. */
   @Column({ type: 'text', nullable: true })
   cancellationReason: string | null;
