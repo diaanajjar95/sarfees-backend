@@ -1434,48 +1434,86 @@ export class DriverTripsService {
       });
       const savedTrip = await mgr.save(trip);
 
-      // Pickup stop (order 0)
-      const pickupStop = mgr.create(DriverTripStop, {
-        trip: { id: savedTrip.id },
-        order: 0,
-        type: DriverTripStopType.PICKUP,
-        city: dto.originCity,
-        address: dto.pickupAddress,
-        lat: dto.pickupLat,
-        lng: dto.pickupLng,
-        status: DriverTripStopStatus.PENDING,
-        cashExpected: 0,
-      });
-      const savedPickup = await mgr.save(pickupStop);
+      // Stop plan (master spec §6.3 ordering): package collection
+      // first, then ONE pickup stop PER passenger at their own
+      // requested location, then ONE dropoff stop PER passenger,
+      // then package delivery last. Each passenger's cash is expected
+      // at their own dropoff stop.
+      let order = 0;
 
-      // Dropoff stop (order 1)
-      const dropoffStop = mgr.create(DriverTripStop, {
-        trip: { id: savedTrip.id },
-        order: 1,
-        type: DriverTripStopType.DROPOFF,
-        city: dto.destinationCity,
-        address: dto.dropoffAddress,
-        lat: dto.dropoffLat,
-        lng: dto.dropoffLng,
-        status: DriverTripStopStatus.PENDING,
-        cashExpected: totalCashExpected,
-      });
-      const savedDropoff = await mgr.save(dropoffStop);
+      if (packages.length) {
+        const pkgPickup = await mgr.save(
+          mgr.create(DriverTripStop, {
+            trip: { id: savedTrip.id },
+            order: order++,
+            type: DriverTripStopType.PICKUP,
+            city: dto.originCity,
+            address: dto.pickupAddress,
+            lat: dto.pickupLat,
+            lng: dto.pickupLng,
+            status: DriverTripStopStatus.PENDING,
+            cashExpected: 0,
+          }),
+        );
+        for (const pkg of packages) {
+          await mgr.save(
+            mgr.create(DriverTripStopPackage, {
+              stop: { id: pkgPickup.id },
+              packageDelivery: { id: pkg.id },
+              role: StopPackageRole.COLLECTING,
+              fee: Number(pkg.deliveryFee),
+              status: StopPackageStatus.PENDING,
+            }),
+          );
+        }
+      }
 
-      // Build passenger junctions
+      // Per-passenger pickups at each passenger's own point. Fall
+      // back to the DTO's canonical pickup when a request predates
+      // location capture (defensive; shouldn't happen in practice).
       for (const tr of tripRequests) {
+        const stop = await mgr.save(
+          mgr.create(DriverTripStop, {
+            trip: { id: savedTrip.id },
+            order: order++,
+            type: DriverTripStopType.PICKUP,
+            city: dto.originCity,
+            address: dto.pickupAddress,
+            lat: tr.departureLocation?.lat ?? dto.pickupLat,
+            lng: tr.departureLocation?.lng ?? dto.pickupLng,
+            status: DriverTripStopStatus.PENDING,
+            cashExpected: 0,
+          }),
+        );
         await mgr.save(
           mgr.create(DriverTripStopPassenger, {
-            stop: { id: savedPickup.id },
+            stop: { id: stop.id },
             tripRequest: { id: tr.id },
             role: StopPassengerRole.BOARDING,
             fare: Number(tr.totalFare),
             status: StopPassengerStatus.PENDING,
           }),
         );
+      }
+
+      // Per-passenger dropoffs, same order — cash collected here.
+      for (const tr of tripRequests) {
+        const stop = await mgr.save(
+          mgr.create(DriverTripStop, {
+            trip: { id: savedTrip.id },
+            order: order++,
+            type: DriverTripStopType.DROPOFF,
+            city: dto.destinationCity,
+            address: dto.dropoffAddress,
+            lat: tr.arrivalLocation?.lat ?? dto.dropoffLat,
+            lng: tr.arrivalLocation?.lng ?? dto.dropoffLng,
+            status: DriverTripStopStatus.PENDING,
+            cashExpected: Number(tr.totalFare),
+          }),
+        );
         await mgr.save(
           mgr.create(DriverTripStopPassenger, {
-            stop: { id: savedDropoff.id },
+            stop: { id: stop.id },
             tripRequest: { id: tr.id },
             role: StopPassengerRole.ALIGHTING,
             fare: Number(tr.totalFare),
@@ -1484,26 +1522,31 @@ export class DriverTripsService {
         );
       }
 
-      // Build package junctions
-      for (const pkg of packages) {
-        await mgr.save(
-          mgr.create(DriverTripStopPackage, {
-            stop: { id: savedPickup.id },
-            packageDelivery: { id: pkg.id },
-            role: StopPackageRole.COLLECTING,
-            fee: Number(pkg.deliveryFee),
-            status: StopPackageStatus.PENDING,
+      if (packages.length) {
+        const pkgDropoff = await mgr.save(
+          mgr.create(DriverTripStop, {
+            trip: { id: savedTrip.id },
+            order: order++,
+            type: DriverTripStopType.DROPOFF,
+            city: dto.destinationCity,
+            address: dto.dropoffAddress,
+            lat: dto.dropoffLat,
+            lng: dto.dropoffLng,
+            status: DriverTripStopStatus.PENDING,
+            cashExpected: totalPackageCash,
           }),
         );
-        await mgr.save(
-          mgr.create(DriverTripStopPackage, {
-            stop: { id: savedDropoff.id },
-            packageDelivery: { id: pkg.id },
-            role: StopPackageRole.DELIVERING,
-            fee: Number(pkg.deliveryFee),
-            status: StopPackageStatus.PENDING,
-          }),
-        );
+        for (const pkg of packages) {
+          await mgr.save(
+            mgr.create(DriverTripStopPackage, {
+              stop: { id: pkgDropoff.id },
+              packageDelivery: { id: pkg.id },
+              role: StopPackageRole.DELIVERING,
+              fee: Number(pkg.deliveryFee),
+              status: StopPackageStatus.PENDING,
+            }),
+          );
+        }
       }
 
       return savedTrip;
