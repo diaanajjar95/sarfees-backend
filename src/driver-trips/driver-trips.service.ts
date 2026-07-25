@@ -208,7 +208,7 @@ export class DriverTripsService {
     const tripRequestIds = await this.collectLinkedTripRequestIds(trip.id);
     const packageIds = await this.collectLinkedPackageIds(trip.id);
 
-    const manifest = await this.dataSource.transaction(async (mgr) => {
+    await this.dataSource.transaction(async (mgr) => {
       const now = new Date();
       trip.status = DriverTripStatus.ACCEPTED;
       trip.acceptedAt = now;
@@ -237,9 +237,14 @@ export class DriverTripsService {
           .whereInIds(packageIds)
           .execute();
       }
-
-      return this.buildManifest(trip.id);
     });
+
+    // Build the manifest AFTER the transaction commits. buildManifest
+    // reads through the default connection, which cannot see this
+    // txn's uncommitted rows — calling it inside used to return a
+    // manifest still stamped `status: "offered"` even though the
+    // accept had fully succeeded.
+    const manifest = await this.buildManifest(trip.id);
 
     // Notify passengers + package senders that a driver has been matched
     const passengerUserIds =
