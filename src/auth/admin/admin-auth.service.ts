@@ -123,7 +123,7 @@ export class AdminAuthService {
     // TTLs are env-configurable so dev can run a long-lived session without
     // re-authing every 30 minutes. Defaults are conservative for prod.
     const accessTtl =
-      this.configService.get<string>('JWT_ADMIN_ACCESS_EXPIRES_IN') ?? '30m';
+      this.configService.get<string>('JWT_ADMIN_ACCESS_EXPIRES_IN') ?? '24h';
     const refreshTtl =
       this.configService.get<string>('JWT_ADMIN_REFRESH_EXPIRES_IN') ?? '7d';
     const [accessToken, refreshToken] = await Promise.all([
