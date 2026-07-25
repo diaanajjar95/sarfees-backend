@@ -100,6 +100,17 @@ export class TripsService {
       if (travelDate < now) {
         throw new BadRequestException(I18nContext.current()?.t('trips.Past date'));
       }
+      // Scheduled trips must leave the matcher its full T-30 runway:
+      // the driver search fires at departure - 30 min, so anything
+      // closer would freeze instantly with no grouping window.
+      // Passengers who want to leave sooner should book a "now" trip
+      // (isImmediate), where the server picks the departure itself.
+      const minLead = new Date(now.getTime() + 30 * 60 * 1000);
+      if (travelDate < minLead) {
+        throw new BadRequestException(
+          I18nContext.current()?.t('trips.Min 30 min ahead'),
+        );
+      }
       const thirtyDaysAhead = new Date();
       thirtyDaysAhead.setDate(thirtyDaysAhead.getDate() + 30);
       if (travelDate > thirtyDaysAhead) {
@@ -107,7 +118,7 @@ export class TripsService {
       }
     }
 
-    const perSeatFare = 10.00; // Mocked flat rate
+    const perSeatFare = 5.0; // Flat rate per passenger seat (business decision, Jul 2026)
     const totalFare = perSeatFare * dto.seatsCount;
     return {
       perSeatFare,
