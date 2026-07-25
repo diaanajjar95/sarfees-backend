@@ -8,6 +8,7 @@ import {
   Map as MapIcon,
   Megaphone,
   Package,
+  Sparkles,
   HelpCircle,
   LogOut,
   Boxes,
@@ -30,6 +31,7 @@ const NAV: {
   { href: '/earnings', label: 'Earnings', icon: DollarSign },
   { href: '/announcements', label: 'Announcements', icon: Megaphone },
   { href: '/faq', label: 'FAQ', icon: HelpCircle },
+  { href: '/early-access', label: 'Early access', icon: Sparkles },
 ];
 
 export default async function DashboardLayout({

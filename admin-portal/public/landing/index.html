@@ -1009,13 +1009,36 @@ body[dir="rtl"] .su-t2 { font-family: var(--font-arabic); }
       if (!form) return;
       form.addEventListener('submit', function (e) {
         e.preventDefault();
-        var payload = {};
-        new FormData(form).forEach(function (v, k) { payload[k] = v; });
-        console.log('[Sarfees] Pre-launch signup:', payload);
-        if (formP) formP.classList.add('su-hidden');
-        if (formD) formD.classList.add('su-hidden');
-        if (togWrap) togWrap.style.display = 'none';
-        if (successBox) successBox.classList.add('su-vis');
+        var raw = {};
+        new FormData(form).forEach(function (v, k) { raw[k] = v; });
+        var payload = { role: id === 'su-form-passenger' ? 'passenger' : 'driver' };
+        if (raw['route']) payload.route = raw['route'];
+        if (raw['frequency']) payload.frequency = raw['frequency'];
+        if (raw['travel-time']) payload.travelTime = raw['travel-time'];
+        if (raw['fair-price']) payload.fairPriceJod = Number(raw['fair-price']);
+        if (raw['method']) payload.findMethod = raw['method'];
+        if (raw['pilot']) payload.pilotWilling = raw['pilot'];
+        if (raw['phone']) payload.phone = raw['phone'];
+        payload.locale = document.documentElement.lang === 'ar' ? 'ar' : 'en';
+        var btn = form.querySelector('button[type="submit"]');
+        if (btn) btn.disabled = true;
+        fetch('/landing/signups', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          if (formP) formP.classList.add('su-hidden');
+          if (formD) formD.classList.add('su-hidden');
+          if (togWrap) togWrap.style.display = 'none';
+          if (successBox) successBox.classList.add('su-vis');
+        }).catch(function (err) {
+          console.error('[Sarfees] signup failed:', err);
+          if (btn) btn.disabled = false;
+          alert(document.documentElement.lang === 'ar'
+            ? 'حدث خطأ — يرجى المحاولة مرة أخرى.'
+            : 'Something went wrong — please try again.');
+        });
       });
     });
 

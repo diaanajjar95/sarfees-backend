@@ -25,6 +25,7 @@ import { AdminEarningsModule } from './admins/earnings/admin-earnings.module';
 import { AdminPassengerRequestsModule } from './admins/passenger-requests/admin-passenger-requests.module';
 import { AdminTripGroupsModule } from './admins/trip-groups/admin-trip-groups.module';
 import { AdminPackagesModule } from './admins/packages/admin-packages.module';
+import { EarlyAccessModule } from './early-access/early-access.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import { FaqModule } from './faq/faq.module';
 import { MapModule } from './shared/map/map.module';
@@ -96,6 +97,7 @@ import * as path from 'path';
     AdminPassengerRequestsModule,
     AdminTripGroupsModule,
     AdminPackagesModule,
+    EarlyAccessModule,
     AnnouncementsModule,
     FaqModule,
     MapModule,
