@@ -6,6 +6,13 @@ const ADMIN_COOKIE = 'sarfees_admin_user';
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // Public marketing page (temporary home until it moves to its own
+  // project) — no admin session required, including its static assets.
+  if (pathname === '/landing' || pathname.startsWith('/landing/')) {
+    return NextResponse.next();
+  }
+
   const hasAccess = !!req.cookies.get(ACCESS_COOKIE)?.value;
   const adminCookie = req.cookies.get(ADMIN_COOKIE)?.value;
 
