@@ -14,6 +14,9 @@ RUN npm run build
 # node_modules subset that's ~10x smaller than a full install.
 FROM node:20-alpine
 
+# tzdata so the TZ env var (Asia/Amman in deploy) actually resolves.
+RUN apk add --no-cache tzdata
+
 WORKDIR /app
 
 ENV NODE_ENV=production

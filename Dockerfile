@@ -12,6 +12,10 @@ RUN npm run build
 # --- Production stage ---
 FROM node:20-alpine
 
+# tzdata so the TZ env var (Asia/Amman in deploy) actually resolves —
+# alpine node images ship without zoneinfo.
+RUN apk add --no-cache tzdata
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./
