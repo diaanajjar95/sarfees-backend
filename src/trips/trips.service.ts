@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { TripRequest } from './entities/trip-request.entity';
 import { Driver } from '../drivers/driver.entity';
 import { DriverLocation } from './entities/driver-location.entity';
@@ -144,6 +144,21 @@ export class TripsService {
 
     if (dto.isFemaleOnly && userGender !== 'Female') {
       throw new ForbiddenException(I18nContext.current()?.t('trips.Female only'));
+    }
+
+    // One live request per passenger: block a new booking while any
+    // earlier one is still pending or mid-trip. They must cancel (or
+    // finish) the existing request first.
+    const existing = await this.tripsRepository.findOne({
+      where: {
+        passenger: { id: userId },
+        status: Not(In([TripStatus.COMPLETED, TripStatus.CANCELLED])),
+      },
+    });
+    if (existing) {
+      throw new BadRequestException(
+        I18nContext.current()?.t('trips.Active request exists'),
+      );
     }
 
     // Master spec §8 — "now" means "within the next 15-30 min", not

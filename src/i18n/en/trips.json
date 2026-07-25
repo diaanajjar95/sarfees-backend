@@ -3,6 +3,7 @@
   "Past date": "Travel date cannot be in the past",
   "Min 30 min ahead": "Scheduled trips must depart at least 30 minutes from now — choose a later time or book a \"leave now\" trip",
   "Quarter hour": "Pickup time must be on a quarter-hour step (:00, :15, :30 or :45)",
+  "Active request exists": "You already have an active trip request — cancel it or wait for it to finish before booking another",
   "Max 30 days": "Travel date cannot be more than 30 days ahead",
   "Female only": "Female-only trips can only be requested by female passengers",
   "No active trip": "You have no active trip at the moment",
