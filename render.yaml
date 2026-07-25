@@ -154,7 +154,7 @@ services:
       - key: MATCHING_SLOT_L
         value: "3"
       - key: MATCHING_PASSENGER_WAIT_TOLERANCE_MIN
-        value: "12"
+        value: "30"
       - key: MATCHING_PACKAGE_WAIT_TOLERANCE_MIN
         value: "12"
       - key: MATCHING_HANDLING_SEC_PER_PACKAGE

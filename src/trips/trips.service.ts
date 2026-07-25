@@ -111,6 +111,17 @@ export class TripsService {
           I18nContext.current()?.t('trips.Min 30 min ahead'),
         );
       }
+      // The app's time picker only offers quarter-hour steps; enforce
+      // it server-side too so all group departure times land on the
+      // same grid (:00 / :15 / :30 / :45).
+      if (
+        travelDate.getUTCMinutes() % 15 !== 0 ||
+        travelDate.getUTCSeconds() !== 0
+      ) {
+        throw new BadRequestException(
+          I18nContext.current()?.t('trips.Quarter hour'),
+        );
+      }
       const thirtyDaysAhead = new Date();
       thirtyDaysAhead.setDate(thirtyDaysAhead.getDate() + 30);
       if (travelDate > thirtyDaysAhead) {
