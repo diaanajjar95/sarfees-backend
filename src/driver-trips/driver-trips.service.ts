@@ -1477,7 +1477,8 @@ export class DriverTripsService {
 
     if (
       dto.type === DriverTripType.WOMEN_ONLY &&
-      driver.gender !== 'female'
+      driver.gender !== 'female' &&
+      !dto.allowMaleForWomenOnly
     ) {
       throw new BadRequestException(
         'Cannot offer a women-only trip to a non-female driver',
