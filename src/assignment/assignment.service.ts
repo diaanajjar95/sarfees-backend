@@ -447,7 +447,10 @@ export class AssignmentService {
    * and either offer to the top candidate, escalate to broadcast, or
    * escalate to ops if we've run out of options.
    */
-  private async sendNextOffer(group: TripGroup): Promise<void> {
+  private async sendNextOffer(
+    group: TripGroup,
+    skipDriverIds: Set<number> = new Set(),
+  ): Promise<void> {
     if (
       group.status !== TripGroupStatus.OFFERING &&
       group.status !== TripGroupStatus.BROADCASTING
@@ -503,11 +506,12 @@ export class AssignmentService {
     const eligible = online.filter((d) => {
       if (alreadyOfferedIds.has(d.id)) return false;
       if (busyDriverIds.has(d.id)) return false;
+      if (skipDriverIds.has(d.id)) return false;
       return isDriverEligible(d, group, originCity, radius, load).ok;
     });
 
     if (eligible.length === 0) {
-      await this.escalateOrBroadcast(group);
+      await this.escalateOrBroadcast(group, skipDriverIds);
       return;
     }
 
@@ -533,7 +537,14 @@ export class AssignmentService {
     const ranked = rankDrivers(eligible, group, originCity, declineMap);
     const top = ranked[0];
     const chosen = eligible.find((d) => d.id === top.driverId)!;
-    await this.offerToDriver(group, chosen, ranked.indexOf(top), false, cfg);
+    await this.offerToDriver(
+      group,
+      chosen,
+      ranked.indexOf(top),
+      false,
+      cfg,
+      skipDriverIds,
+    );
   }
 
   /**
@@ -541,7 +552,10 @@ export class AssignmentService {
    * time on the clock, escalate to broadcast; otherwise open an
    * escalation case.
    */
-  private async escalateOrBroadcast(group: TripGroup): Promise<void> {
+  private async escalateOrBroadcast(
+    group: TripGroup,
+    skipDriverIds: Set<number> = new Set(),
+  ): Promise<void> {
     if (group.status === TripGroupStatus.BROADCASTING) {
       // Broadcast round finished with no accept — escalate.
       await this.escalate(group);
@@ -550,10 +564,13 @@ export class AssignmentService {
     group.status = TripGroupStatus.BROADCASTING;
     await this.groupsRepo.save(group);
     this.logger.log(`Group #${group.id} → BROADCASTING`);
-    await this.triggerBroadcast(group);
+    await this.triggerBroadcast(group, skipDriverIds);
   }
 
-  private async triggerBroadcast(group: TripGroup): Promise<void> {
+  private async triggerBroadcast(
+    group: TripGroup,
+    skipDriverIds: Set<number> = new Set(),
+  ): Promise<void> {
     const cfg = await this.matchingConfigService.getConfig();
     const originCity = group.originCity;
     const radius =
@@ -575,6 +592,7 @@ export class AssignmentService {
     });
     const pool = online.filter((d) => {
       if (alreadyOfferedIds.has(d.id)) return false;
+      if (skipDriverIds.has(d.id)) return false;
       const verdict = isDriverEligible(d, group, originCity, radius, load);
       return verdict.ok;
     });
@@ -596,7 +614,7 @@ export class AssignmentService {
       `Broadcast group #${group.id} to ${broadcastSet.length} drivers`,
     );
     for (const d of broadcastSet) {
-      await this.offerToDriver(group, d, -1, true, cfg);
+      await this.offerToDriver(group, d, -1, true, cfg, skipDriverIds);
     }
   }
 
@@ -641,6 +659,7 @@ export class AssignmentService {
     cascadeIndex: number,
     broadcast: boolean,
     cfg: { offerCountdownSeconds: number },
+    skipDriverIds: Set<number> = new Set(),
   ): Promise<void> {
     const requests = await this.requestsRepo.find({
       where: { tripGroup: { id: group.id } },
@@ -683,6 +702,11 @@ export class AssignmentService {
       tripRequestIds: requests.map((r) => r.id),
       packageDeliveryIds: packages.map((p) => p.id),
       offerCountdownSeconds: cfg.offerCountdownSeconds,
+      // §9.4: ranking puts every female driver ahead of any male for
+      // women-only groups, so this driver being male means no female
+      // was available — the legitimate fallback (passengers get the
+      // free-cancel notification on accept).
+      allowMaleForWomenOnly: true,
     };
 
     let driverTrip: DriverTrip;
@@ -692,12 +716,16 @@ export class AssignmentService {
       this.logger.error(
         `seedTrip failed for group #${group.id} driver #${driver.id}: ${err instanceof Error ? err.message : err}`,
       );
-      // Skip this driver, keep the cascade going.
+      // Skip this driver and keep the cascade going. The skip set is
+      // what prevents a tight loop: a failed seedTrip writes no
+      // offer-history row, so without it the ranking would re-pick
+      // this same driver forever.
+      skipDriverIds.add(driver.id);
       const groupReload = await this.groupsRepo.findOne({
         where: { id: group.id },
         relations: ['originCity', 'destCity'],
       });
-      if (groupReload) await this.sendNextOffer(groupReload);
+      if (groupReload) await this.sendNextOffer(groupReload, skipDriverIds);
       return;
     }
 
