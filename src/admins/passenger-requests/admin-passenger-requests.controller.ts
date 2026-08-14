@@ -1,11 +1,17 @@
 import {
+  Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
+  Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { AuthGuard } from '@nestjs/passport';
 import {
   ApiBearerAuth,
@@ -20,6 +26,9 @@ import {
   PassengerRequestRowDto,
 } from './dto/list-passenger-requests.dto';
 import { RolesGuard } from '../../shared/guards/roles.guard';
+import { Roles } from '../../shared/decorators/roles.decorator';
+import { AdminRole } from '../../shared/enums/admin-role.enum';
+import { AdminCancelDto } from '../shared/dto/admin-cancel.dto';
 
 @ApiTags('Admin — Passenger Requests')
 @ApiBearerAuth()
@@ -44,5 +53,23 @@ export class AdminPassengerRequestsController {
   @Get(':id')
   detail(@Param('id', ParseIntPipe) id: number): Promise<PassengerRequestRowDto> {
     return this.service.detail(id);
+  }
+
+  @ApiOperation({
+    summary: 'Cancel a passenger request (ops, reason required)',
+    description:
+      'Marks the request CANCELLED with an audit trail (admin id + reason) and runs the same Stage-1 group bookkeeping as a passenger self-cancel.',
+  })
+  @ApiResponse({ status: 200, description: 'Request cancelled' })
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.OPS_MANAGER)
+  @HttpCode(HttpStatus.OK)
+  @Post(':id/cancel')
+  cancel(
+    @Req() req: Request,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AdminCancelDto,
+  ): Promise<{ id: number; status: string }> {
+    const adminId = (req.user as { adminId: number }).adminId;
+    return this.service.cancel(id, adminId, dto.reason);
   }
 }

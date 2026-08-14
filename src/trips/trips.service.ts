@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { TripRequest } from './entities/trip-request.entity';
 import { Driver } from '../drivers/driver.entity';
 import { DriverLocation } from './entities/driver-location.entity';
-import { MatchingService } from '../matching/matching.service';
+import { GroupingService } from '../grouping/grouping.service';
+import { AssignmentService } from '../assignment/assignment.service';
+import { MatchingConfigService } from '../matching-config/matching-config.service';
 import { PackageDelivery } from '../packages/entities/package-delivery.entity';
 import { PackageStatus } from '../shared/enums/package-status.enum';
 import { TripStatus } from '../shared/enums/trip-status.enum';
@@ -80,7 +82,9 @@ export class TripsService {
     @InjectRepository(PackageDelivery)
     private packagesRepository: Repository<PackageDelivery>,
 
-    private readonly matchingService: MatchingService,
+    private readonly groupingService: GroupingService,
+    private readonly assignmentService: AssignmentService,
+    private readonly matchingConfigService: MatchingConfigService,
   ) {}
 
   // ─── Existing endpoints ────────────────────────────────────
@@ -96,6 +100,28 @@ export class TripsService {
       if (travelDate < now) {
         throw new BadRequestException(I18nContext.current()?.t('trips.Past date'));
       }
+      // Scheduled trips must leave the matcher its full T-30 runway:
+      // the driver search fires at departure - 30 min, so anything
+      // closer would freeze instantly with no grouping window.
+      // Passengers who want to leave sooner should book a "now" trip
+      // (isImmediate), where the server picks the departure itself.
+      const minLead = new Date(now.getTime() + 30 * 60 * 1000);
+      if (travelDate < minLead) {
+        throw new BadRequestException(
+          I18nContext.current()?.t('trips.Min 30 min ahead'),
+        );
+      }
+      // The app's time picker only offers quarter-hour steps; enforce
+      // it server-side too so all group departure times land on the
+      // same grid (:00 / :15 / :30 / :45).
+      if (
+        travelDate.getUTCMinutes() % 15 !== 0 ||
+        travelDate.getUTCSeconds() !== 0
+      ) {
+        throw new BadRequestException(
+          I18nContext.current()?.t('trips.Quarter hour'),
+        );
+      }
       const thirtyDaysAhead = new Date();
       thirtyDaysAhead.setDate(thirtyDaysAhead.getDate() + 30);
       if (travelDate > thirtyDaysAhead) {
@@ -103,7 +129,7 @@ export class TripsService {
       }
     }
 
-    const perSeatFare = 10.00; // Mocked flat rate
+    const perSeatFare = 5.0; // Flat rate per passenger seat (business decision, Jul 2026)
     const totalFare = perSeatFare * dto.seatsCount;
     return {
       perSeatFare,
@@ -120,16 +146,43 @@ export class TripsService {
       throw new ForbiddenException(I18nContext.current()?.t('trips.Female only'));
     }
 
+    // One live request per passenger: block a new booking while any
+    // earlier one is still pending or mid-trip. They must cancel (or
+    // finish) the existing request first.
+    const existing = await this.tripsRepository.findOne({
+      where: {
+        passenger: { id: userId },
+        status: Not(In([TripStatus.COMPLETED, TripStatus.CANCELLED])),
+      },
+    });
+    if (existing) {
+      throw new BadRequestException(
+        I18nContext.current()?.t('trips.Active request exists'),
+      );
+    }
+
+    // Master spec §8 — "now" means "within the next 15-30 min", not
+    // "leaving this exact instant". The passenger is told the actual
+    // departure at request time; we pick the midpoint of the config
+    // window so the group has a real T-30 for cascade to fire against.
+    const cfg = await this.matchingConfigService.getConfig();
+    const nowWindowMidMin =
+      (cfg.nowWindowMinMinutes + cfg.nowWindowMaxMinutes) / 2;
+    const travelDate = dto.isImmediate
+      ? new Date(Date.now() + nowWindowMidMin * 60 * 1000)
+      : new Date(dto.travelDate as string);
+
     const trip = this.tripsRepository.create({
       passenger: { id: userId },
       departureCity: { id: dto.departureCityId },
       arrivalCity: { id: dto.arrivalCityId },
       departureLocation: dto.departureLocation,
       arrivalLocation: dto.arrivalLocation,
-      travelDate: dto.isImmediate ? new Date() : new Date(dto.travelDate as string),
+      travelDate,
       isImmediate: dto.isImmediate || false,
       seatsCount: dto.seatsCount,
       isFemaleOnly: dto.isFemaleOnly || false,
+      bookWholeCar: dto.bookWholeCar || false,
       perSeatFare: estimates.perSeatFare,
       totalFare: estimates.totalFare,
       status: TripStatus.PENDING,
@@ -137,20 +190,13 @@ export class TripsService {
 
     const saved = await this.tripsRepository.save(trip);
 
-    // Auto-match: try to find an active driver and offer the trip immediately.
-    // Failure here MUST NOT roll back the passenger's request — we keep it as
-    // PENDING so ops can assign manually from /admin/passenger-requests.
+    // Stage-1 grouping. Failure MUST NOT roll back the passenger's
+    // request — it stays PENDING and the next sweeper tick will
+    // retry via re-grouping (planned for PR 4).
     try {
-      const reloaded = await this.tripsRepository.findOne({
-        where: { id: saved.id },
-        relations: ['departureCity', 'arrivalCity'],
-      });
-      if (reloaded) {
-        await this.matchingService.attemptMatch(reloaded);
-      }
+      await this.groupingService.attemptGroupingForTripRequest(saved.id);
     } catch (err) {
-      // Logged inside MatchingService; swallow here to keep createRequest's
-      // public contract unchanged.
+      // Logged inside GroupingService.
       void err;
     }
 
@@ -438,6 +484,17 @@ export class TripsService {
     }
 
     await this.tripsRepository.save(trip);
+
+    // Feed the Stage-1 matcher when a passenger cancels so their
+    // group can update (§10). Failure MUST NOT flip the status back
+    // — the request is already CANCELLED at the DB.
+    if (dto.status === TripStatus.CANCELLED) {
+      try {
+        await this.assignmentService.handlePassengerCancel(tripId);
+      } catch (err) {
+        void err;
+      }
+    }
 
     return {
       message: I18nContext.current()?.t('trips.Status updated') || 'Trip status updated',

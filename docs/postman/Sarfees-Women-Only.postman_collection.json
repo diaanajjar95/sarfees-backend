@@ -1,0 +1,466 @@
+{
+  "info": {
+    "name": "Sarfees — Women-Only (§7 rules, female-first cascade, male fallback)",
+    "description": "Proves every women-only rule end to end through the natural matching flow.\n\n## What it asserts\n1. **Guards** — a male passenger cannot book women-only (403); a male driver cannot go online as a women-only driver (403).\n2. **Group isolation** — two women's women-only requests bundle into ONE `womenOnly` group; a man's regular request on the same corridor and slot lands in a SEPARATE group.\n3. **Female-first cascade** — with a male driver standing AT the pickup and a female driver 3 km away, the offer goes to the female driver.\n4. **Male fallback (§9.4, optional folder)** — with no female driver online, the male driver gets the offer as last resort, and each passenger receives the `women_only_male_driver_fallback` notification (free cancel).\n\n## How the timing works\nBookings target the next quarter-hour slot ≥ 31 min out (pre-request script). The group freezes and cascades when the slot crosses T-30 — between ~1 and ~15 min after booking. RE-RUN the poll request every ~30 s until it passes; the offer countdown is 30 s, so accept immediately.\n\n## Cast\nPassengers: Lina `790000002` (F), Dana `790000004` (F), Ahmad `790000001` (M) — mock OTP `1234`.\nDrivers: Rania `770000005` (female), Omar `770000002` (male). Admin `admin@sarfees.com`.\n\n## Prereqs\n- Backend with the §9.4 fallback fix (PR #43) deployed.\n- No leftover live requests for the cast (folder 6 cleans up after itself).\n- ⚠️ If a real driver app / emulator is logged in as a test driver, its GPS pings overwrite the activation coords every ~10 s — an emulator on default GPS (Mountain View) silently excludes that driver from matching. Set emulator GPS to Amman or log it out.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://169.58.67.105" },
+    { "key": "countryCode", "value": "+962" },
+    { "key": "otp", "value": "1234" },
+    { "key": "femaleAPhone", "value": "790000002" },
+    { "key": "femaleBPhone", "value": "790000004" },
+    { "key": "malePaxPhone", "value": "790000001" },
+    { "key": "femaleDriverPhone", "value": "770000005" },
+    { "key": "maleDriverPhone", "value": "770000002" },
+    { "key": "adminEmail", "value": "admin@sarfees.com" },
+    { "key": "adminPassword", "value": "SarfeesAdmin2026!" },
+    { "key": "femaleAToken", "value": "" },
+    { "key": "femaleBToken", "value": "" },
+    { "key": "malePaxToken", "value": "" },
+    { "key": "femaleDriverToken", "value": "" },
+    { "key": "maleDriverToken", "value": "" },
+    { "key": "adminToken", "value": "" },
+    { "key": "slot", "value": "" },
+    { "key": "slot2", "value": "" },
+    { "key": "maleRequestId", "value": "" },
+    { "key": "womenOnlyGroupId", "value": "" },
+    { "key": "tripId", "value": "" },
+    { "key": "fallbackTripId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth — 3 passengers, 2 drivers, admin",
+      "item": [
+        {
+          "name": "1.1 Female A — OTP",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/auth/login", "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{femaleAPhone}}\",\n  \"countryCode\": \"{{countryCode}}\"\n}" } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('OTP requested', () => pm.response.to.have.status(201));"] } }]
+        },
+        {
+          "name": "1.2 Female A — verify",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/auth/verify-otp", "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{femaleAPhone}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"otp\": \"{{otp}}\"\n}" } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('femaleAToken', d.accessToken);",
+            "pm.test('token saved', () => pm.expect(d.accessToken).to.be.a('string'));"
+          ] } }]
+        },
+        {
+          "name": "1.3 Female B — OTP",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/auth/login", "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{femaleBPhone}}\",\n  \"countryCode\": \"{{countryCode}}\"\n}" } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('OTP requested', () => pm.response.to.have.status(201));"] } }]
+        },
+        {
+          "name": "1.4 Female B — verify",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/auth/verify-otp", "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{femaleBPhone}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"otp\": \"{{otp}}\"\n}" } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('femaleBToken', d.accessToken);",
+            "pm.test('token saved', () => pm.expect(d.accessToken).to.be.a('string'));"
+          ] } }]
+        },
+        {
+          "name": "1.5 Male passenger — OTP",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/auth/login", "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{malePaxPhone}}\",\n  \"countryCode\": \"{{countryCode}}\"\n}" } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('OTP requested', () => pm.response.to.have.status(201));"] } }]
+        },
+        {
+          "name": "1.6 Male passenger — verify",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/auth/verify-otp", "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{malePaxPhone}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"otp\": \"{{otp}}\"\n}" } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('malePaxToken', d.accessToken);",
+            "pm.test('token saved', () => pm.expect(d.accessToken).to.be.a('string'));"
+          ] } }]
+        },
+        {
+          "name": "1.7 Female driver (Rania) — OTP",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/auth/driver/request-otp", "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{femaleDriverPhone}}\",\n  \"countryCode\": \"{{countryCode}}\"\n}" } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('OTP requested', () => pm.response.to.have.status(201));"] } }]
+        },
+        {
+          "name": "1.8 Female driver — verify",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/auth/driver/verify-otp", "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{femaleDriverPhone}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"otp\": \"{{otp}}\"\n}" } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('femaleDriverToken', d.accessToken);",
+            "pm.test('token saved', () => pm.expect(d.accessToken).to.be.a('string'));"
+          ] } }]
+        },
+        {
+          "name": "1.9 Male driver (Omar) — OTP",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/auth/driver/request-otp", "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{maleDriverPhone}}\",\n  \"countryCode\": \"{{countryCode}}\"\n}" } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('OTP requested', () => pm.response.to.have.status(201));"] } }]
+        },
+        {
+          "name": "1.10 Male driver — verify",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/auth/driver/verify-otp", "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{maleDriverPhone}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"otp\": \"{{otp}}\"\n}" } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('maleDriverToken', d.accessToken);",
+            "pm.test('token saved', () => pm.expect(d.accessToken).to.be.a('string'));"
+          ] } }]
+        },
+        {
+          "name": "1.11 Admin — login",
+          "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "url": "{{baseUrl}}/admin/auth/login", "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}" } },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('adminToken', d.accessToken);",
+            "pm.test('token saved', () => pm.expect(d.accessToken).to.be.a('string'));"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "2. §7 guards — both rejections",
+      "item": [
+        {
+          "name": "2.1 Male passenger books women-only → 403 (expected!)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{malePaxToken}}" }
+            ],
+            "url": "{{baseUrl}}/trips/request",
+            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 1,\n  \"arrivalCityId\": 2,\n  \"departureLocation\": { \"lat\": 31.9539, \"lng\": 35.9106 },\n  \"arrivalLocation\": { \"lat\": 32.5556, \"lng\": 35.8500 },\n  \"travelDate\": \"{{slot}}\",\n  \"isImmediate\": false,\n  \"seatsCount\": 1,\n  \"isFemaleOnly\": true\n}" },
+            "description": "Green test = the API refused. A male passenger can never book a women-only trip."
+          },
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+              "const t = new Date(Date.now() + 31 * 60 * 1000);",
+              "t.setUTCSeconds(0, 0);",
+              "const rem = t.getUTCMinutes() % 15;",
+              "if (rem !== 0) t.setUTCMinutes(t.getUTCMinutes() + (15 - rem));",
+              "pm.collectionVariables.set('slot', t.toISOString().replace(/\\.\\d{3}Z$/, '.000Z'));",
+              "pm.collectionVariables.set('slot2', new Date(t.getTime() + 15 * 60 * 1000).toISOString().replace(/\\.\\d{3}Z$/, '.000Z'));",
+              "console.log('Slot =', pm.collectionVariables.get('slot'), '— freeze fires at slot − 30 min.');"
+            ] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('male + women-only rejected with 403', () => pm.response.to.have.status(403));"] } }
+          ]
+        },
+        {
+          "name": "2.2 Male driver activates as women-only → 403 (expected!)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{maleDriverToken}}" }
+            ],
+            "url": "{{baseUrl}}/drivers/activate",
+            "body": { "mode": "raw", "raw": "{\n  \"tripTypes\": [\"women_only\"],\n  \"goingHome\": false,\n  \"destinationCity\": \"Irbid\",\n  \"minPassengers\": 1,\n  \"currentLocationLat\": 31.9539,\n  \"currentLocationLng\": 35.9106\n}" },
+            "description": "Green test = the API refused. Only female drivers may register for women-only work."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('male driver + women_only rejected with 403', () => pm.response.to.have.status(403));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "3. Book — 2 women-only + 1 regular, same corridor",
+      "item": [
+        {
+          "name": "3.1 Female A — women-only at slot",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{femaleAToken}}" }
+            ],
+            "url": "{{baseUrl}}/trips/request",
+            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 1,\n  \"arrivalCityId\": 2,\n  \"departureLocation\": { \"lat\": 31.9539, \"lng\": 35.9106 },\n  \"arrivalLocation\": { \"lat\": 32.5556, \"lng\": 35.8500 },\n  \"travelDate\": \"{{slot}}\",\n  \"isImmediate\": false,\n  \"seatsCount\": 1,\n  \"isFemaleOnly\": true\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('created', () => pm.response.to.have.status(201));"] } }]
+        },
+        {
+          "name": "3.2 Female B — women-only at slot, ~500 m away",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{femaleBToken}}" }
+            ],
+            "url": "{{baseUrl}}/trips/request",
+            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 1,\n  \"arrivalCityId\": 2,\n  \"departureLocation\": { \"lat\": 31.9560, \"lng\": 35.9130 },\n  \"arrivalLocation\": { \"lat\": 32.5530, \"lng\": 35.8530 },\n  \"travelDate\": \"{{slot}}\",\n  \"isImmediate\": false,\n  \"seatsCount\": 1,\n  \"isFemaleOnly\": true\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('created', () => pm.response.to.have.status(201));"] } }]
+        },
+        {
+          "name": "3.3 Male — REGULAR request, same corridor + slot",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{malePaxToken}}" }
+            ],
+            "url": "{{baseUrl}}/trips/request",
+            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 1,\n  \"arrivalCityId\": 2,\n  \"departureLocation\": { \"lat\": 31.9550, \"lng\": 35.9120 },\n  \"arrivalLocation\": { \"lat\": 32.5556, \"lng\": 35.8500 },\n  \"travelDate\": \"{{slot}}\",\n  \"isImmediate\": false,\n  \"seatsCount\": 1,\n  \"isFemaleOnly\": false\n}" },
+            "description": "Identical corridor, identical slot, pickup between the two women — must still land in a separate group."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('maleRequestId', d.id);",
+            "pm.test('created', () => pm.response.to.have.status(201));"
+          ] } }]
+        },
+        {
+          "name": "3.4 ISOLATION PROOF — one womenOnly group of 2, male separate",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{baseUrl}}/admin/trip-groups?limit=10",
+            "description": "The women-only pair must share one womenOnly group; the male's request must sit in its own non-women-only group despite the identical corridor and slot."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "const rows = d.data ?? d;",
+            "const open = rows.filter(g => g.status === 'open');",
+            "const wo = open.filter(g => g.womenOnly);",
+            "const reg = open.filter(g => !g.womenOnly);",
+            "pm.test('exactly one open women-only group', () => pm.expect(wo.length).to.eql(1));",
+            "pm.test('women-only group holds both women', () => {",
+            "  const members = wo[0].memberCount ?? wo[0].passengerCount ?? wo[0].members;",
+            "  pm.expect(Number(members)).to.eql(2);",
+            "});",
+            "pm.test('male request is in a separate regular group', () => pm.expect(reg.length).to.be.at.least(1));",
+            "pm.collectionVariables.set('womenOnlyGroupId', wo[0].id);",
+            "console.log('women-only group', wo[0].id, '| regular group(s)', reg.map(g => g.id).join(','));"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "4. Drivers online — male AT pickup, female 3 km away",
+      "item": [
+        {
+          "name": "4.1 Omar (male) activates mixed, AT the pickup center",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{maleDriverToken}}" }
+            ],
+            "url": "{{baseUrl}}/drivers/activate",
+            "body": { "mode": "raw", "raw": "{\n  \"tripTypes\": [\"mixed\"],\n  \"goingHome\": false,\n  \"destinationCity\": \"Irbid\",\n  \"minPassengers\": 1,\n  \"currentLocationLat\": 31.9539,\n  \"currentLocationLng\": 35.9106\n}" },
+            "description": "Best possible proximity score — the point of the test is that it must NOT win the women-only trip."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.test('active', () => pm.expect(d.status).to.eql('active'));"
+          ] } }]
+        },
+        {
+          "name": "4.2 Rania (female) activates mixed, 3 km away",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{femaleDriverToken}}" }
+            ],
+            "url": "{{baseUrl}}/drivers/activate",
+            "body": { "mode": "raw", "raw": "{\n  \"tripTypes\": [\"mixed\"],\n  \"goingHome\": false,\n  \"destinationCity\": \"Irbid\",\n  \"minPassengers\": 1,\n  \"currentLocationLat\": 31.9800,\n  \"currentLocationLng\": 35.9250\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.test('active', () => pm.expect(d.status).to.eql('active'));"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "5. Match — female-first cascade",
+      "item": [
+        {
+          "name": "5.1 Poll RANIA until offer (re-run every ~30 s)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{femaleDriverToken}}" }],
+            "url": "{{baseUrl}}/drivers/home-summary",
+            "description": "Freeze fires when the slot crosses T-30 (up to ~15 min after booking). RE-RUN until it passes. Offer countdown is 30 s — run 5.2 immediately."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "const offer = d.pendingOffer;",
+            "if (offer) {",
+            "  pm.collectionVariables.set('tripId', offer.tripId);",
+            "  console.log('OFFER for Rania! trip', offer.tripId, '—', offer.secondsRemaining, 's left. Run 5.2 NOW.');",
+            "} else {",
+            "  console.log('No offer yet — re-run in ~30 s.');",
+            "}",
+            "pm.test('Rania has the offer (re-run until it passes)', () => pm.expect(offer, 'pendingOffer').to.exist);"
+          ] } }]
+        },
+        {
+          "name": "5.2 Rania accepts → trip type women_only",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{femaleDriverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/accept"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.test('accepted', () => pm.expect(d.status).to.eql('accepted'));",
+            "pm.test('trip is women_only', () => pm.expect(d.type).to.eql('women_only'));",
+            "pm.test('two pickup stops — one per passenger', () => {",
+            "  const pickups = (d.stops ?? []).filter(s => s.type === 'pickup');",
+            "  pm.expect(pickups.length).to.eql(2);",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "5.3 Omar never saw the women-only trip",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{maleDriverToken}}" }],
+            "url": "{{baseUrl}}/drivers/home-summary",
+            "description": "Omar may legitimately hold an offer for the MALE group's trip — but never for the women-only one."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "const offer = d.pendingOffer;",
+            "pm.test('no women-only offer for the male driver', () => {",
+            "  if (!offer) return; // nothing pending at all — pass",
+            "  pm.expect(offer.tripId, 'Omar was offered the women-only trip!').to.not.eql(Number(pm.collectionVariables.get('tripId')));",
+            "});",
+            "console.log(offer ? `Omar holds trip ${offer.tripId} (the regular group) — fine.` : 'Omar has no pending offer — fine.');"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "6. Cleanup — cancel + drivers offline",
+      "item": [
+        {
+          "name": "6.1 Admin cancels the women-only trip",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/admin/trips/{{tripId}}/cancel",
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Postman women-only run — cleanup\"\n}" },
+            "description": "Full-stop cancel: also cancels the two member requests, freeing both passengers."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('cancelled', () => pm.response.to.be.success);"] } }]
+        },
+        {
+          "name": "6.2 Admin cancels the male's request",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/admin/passenger-requests/{{maleRequestId}}/cancel",
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Postman women-only run — cleanup\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('cancelled', () => pm.response.to.be.success);"] } }]
+        },
+        {
+          "name": "6.3 Rania offline",
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{femaleDriverToken}}" }], "url": "{{baseUrl}}/drivers/deactivate" },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('offline', () => pm.response.to.be.success);"] } }]
+        },
+        {
+          "name": "6.4 Omar offline (skip folder 7) — or keep him on for the fallback test",
+          "request": { "method": "POST", "header": [{ "key": "Authorization", "value": "Bearer {{maleDriverToken}}" }], "url": "{{baseUrl}}/drivers/deactivate",
+            "description": "Run this only if you are NOT continuing to folder 7 — the fallback test needs Omar online and Rania offline." },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('offline', () => pm.response.to.be.success);"] } }]
+        }
+      ]
+    },
+    {
+      "name": "7. OPTIONAL — §9.4 male fallback",
+      "description": "Prereq: Rania OFFLINE, Omar ONLINE (folder 6: run 6.3, skip 6.4 — or re-run 4.1). With no female driver available, the male driver is the legitimate last resort and passengers are notified with free cancel.",
+      "item": [
+        {
+          "name": "7.1 Female A books women-only again",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{femaleAToken}}" }
+            ],
+            "url": "{{baseUrl}}/trips/request",
+            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 1,\n  \"arrivalCityId\": 2,\n  \"departureLocation\": { \"lat\": 31.9539, \"lng\": 35.9106 },\n  \"arrivalLocation\": { \"lat\": 32.5556, \"lng\": 35.8500 },\n  \"travelDate\": \"{{slot}}\",\n  \"isImmediate\": false,\n  \"seatsCount\": 1,\n  \"isFemaleOnly\": true\n}" }
+          },
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+              "const t = new Date(Date.now() + 31 * 60 * 1000);",
+              "t.setUTCSeconds(0, 0);",
+              "const rem = t.getUTCMinutes() % 15;",
+              "if (rem !== 0) t.setUTCMinutes(t.getUTCMinutes() + (15 - rem));",
+              "pm.collectionVariables.set('slot', t.toISOString().replace(/\\.\\d{3}Z$/, '.000Z'));",
+              "console.log('Fallback slot =', pm.collectionVariables.get('slot'));"
+            ] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('created', () => pm.response.to.have.status(201));"] } }
+          ]
+        },
+        {
+          "name": "7.2 Poll OMAR until fallback offer (re-run every ~30 s)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{maleDriverToken}}" }],
+            "url": "{{baseUrl}}/drivers/home-summary",
+            "description": "No female online → the cascade falls back to the male driver instead of escalating. RE-RUN until it passes; accept within 30 s."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "const offer = d.pendingOffer;",
+            "if (offer) {",
+            "  pm.collectionVariables.set('fallbackTripId', offer.tripId);",
+            "  console.log('FALLBACK offer for Omar! trip', offer.tripId, '. Run 7.3 NOW.');",
+            "} else {",
+            "  console.log('No offer yet — re-run in ~30 s.');",
+            "}",
+            "pm.test('Omar has the fallback offer (re-run until it passes)', () => pm.expect(offer, 'pendingOffer').to.exist);"
+          ] } }]
+        },
+        {
+          "name": "7.3 Omar accepts the women-only trip",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{maleDriverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{fallbackTripId}}/accept"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.test('accepted', () => pm.expect(d.status).to.eql('accepted'));",
+            "pm.test('trip is women_only', () => pm.expect(d.type).to.eql('women_only'));"
+          ] } }]
+        },
+        {
+          "name": "7.4 Passenger got the free-cancel fallback notification",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{femaleAToken}}" }],
+            "url": "{{baseUrl}}/users/notifications?limit=5"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const body = pm.response.json().data ?? pm.response.json();",
+            "const rows = Array.isArray(body) ? body : (body.data ?? body.notifications ?? []);",
+            "pm.test('women_only_male_driver_fallback notification present', () => {",
+            "  pm.expect(rows.some(n => n.type === 'women_only_male_driver_fallback')).to.be.true;",
+            "});"
+          ] } }]
+        },
+        {
+          "name": "7.5 Cleanup — cancel fallback trip + Omar offline",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/admin/trips/{{fallbackTripId}}/cancel",
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Postman women-only fallback run — cleanup\"\n}" },
+            "description": "After this, run 6.4 to take Omar offline."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('cancelled', () => pm.response.to.be.success);"] } }]
+        }
+      ]
+    }
+  ]
+}

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -64,13 +65,32 @@ import { DriverNotificationsService } from '../notifications/driver-notification
 import { DriverNotificationType } from '../shared/enums/driver-notification-type.enum';
 import { PassengerNotificationsService } from '../notifications/passenger/passenger-notifications.service';
 import { PassengerNotificationType } from '../shared/enums/passenger-notification-type.enum';
+import { AssignmentService } from '../assignment/assignment.service';
+import { Inject, forwardRef } from '@nestjs/common';
 
 const DEFAULT_OFFER_SECONDS = 45;
 const DEFAULT_COMMISSION_RATE = 0.15;
 const ESTIMATED_MINUTES_PER_STOP = 35;
 
+/**
+ * Returns "tomorrow at 00:00 local time" as a UTC Date. Used by the
+ * going-home auto-offline lock (§9.6). The boundary is
+ * matching_config.goingHomeDayBoundaryHourLocal — 0 by default;
+ * ops can shift to e.g. 4am if drivers hit "going home" at 11pm
+ * and would rather be re-eligible sooner.
+ */
+function nextLocalMidnight(): Date {
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 0, 0, 0);
+  return tomorrow;
+}
+
 @Injectable()
 export class DriverTripsService {
+  private readonly logger = new Logger(DriverTripsService.name);
+
   constructor(
     @InjectRepository(DriverTrip)
     private readonly tripsRepo: Repository<DriverTrip>,
@@ -91,6 +111,8 @@ export class DriverTripsService {
     private readonly dataSource: DataSource,
     private readonly notifications: DriverNotificationsService,
     private readonly passengerNotifications: PassengerNotificationsService,
+    @Inject(forwardRef(() => AssignmentService))
+    private readonly assignmentService: AssignmentService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════
@@ -186,7 +208,7 @@ export class DriverTripsService {
     const tripRequestIds = await this.collectLinkedTripRequestIds(trip.id);
     const packageIds = await this.collectLinkedPackageIds(trip.id);
 
-    const manifest = await this.dataSource.transaction(async (mgr) => {
+    await this.dataSource.transaction(async (mgr) => {
       const now = new Date();
       trip.status = DriverTripStatus.ACCEPTED;
       trip.acceptedAt = now;
@@ -215,9 +237,14 @@ export class DriverTripsService {
           .whereInIds(packageIds)
           .execute();
       }
-
-      return this.buildManifest(trip.id);
     });
+
+    // Build the manifest AFTER the transaction commits. buildManifest
+    // reads through the default connection, which cannot see this
+    // txn's uncommitted rows — calling it inside used to return a
+    // manifest still stamped `status: "offered"` even though the
+    // accept had fully succeeded.
+    const manifest = await this.buildManifest(trip.id);
 
     // Notify passengers + package senders that a driver has been matched
     const passengerUserIds =
@@ -241,6 +268,17 @@ export class DriverTripsService {
       bodyAr: 'تم تعيين سائق لتوصيل طردك.',
       payload: { tripId: trip.id },
     });
+
+    // Feed the Stage-2 cascade so a group-linked trip transitions
+    // TripGroup → ASSIGNED and any parallel broadcast offers are
+    // superseded. Legacy trips (no offer_history row) are a no-op.
+    try {
+      await this.assignmentService.handleAcceptance(trip.id);
+    } catch (err) {
+      this.logger.warn(
+        `AssignmentService.handleAcceptance failed for trip #${trip.id}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
 
     return manifest;
   }
@@ -271,6 +309,17 @@ export class DriverTripsService {
         autoDeclined: false,
       }),
     );
+
+    // Feed the Stage-2 cascade — records the DECLINE on the offer
+    // history row and offers to the next candidate. Legacy trips
+    // (no offer_history row) are a no-op.
+    try {
+      await this.assignmentService.handleDecline(trip.id);
+    } catch (err) {
+      this.logger.warn(
+        `AssignmentService.handleDecline failed for trip #${trip.id}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
 
     return { message: 'Declined' };
   }
@@ -569,18 +618,36 @@ export class DriverTripsService {
     }
 
     const boarding = await this.stopPassengersRepo.find({
-      where: { stop: { id: stop.id }, role: StopPassengerRole.BOARDING },
+      where: {
+        stop: { id: stop.id },
+        role: StopPassengerRole.BOARDING,
+        status: StopPassengerStatus.PENDING,
+      },
       relations: ['tripRequest'],
     });
     const collecting = await this.stopPackagesRepo.find({
-      where: { stop: { id: stop.id }, role: StopPackageRole.COLLECTING },
+      where: {
+        stop: { id: stop.id },
+        role: StopPackageRole.COLLECTING,
+        status: StopPackageStatus.PENDING,
+      },
       relations: ['packageDelivery'],
     });
 
     const pickedSet = new Set(dto.passengersPickedUp ?? []);
     const noShowSet = new Set(dto.noShows ?? []);
     const collectedSet = new Set(dto.packagesCollected ?? []);
-    const notFoundSet = new Set(dto.packagesNotFound ?? []);
+    const refusalByLink = new Map(
+      (dto.packagesRefused ?? []).map((r) => [r.id, r]),
+    );
+    // §6.7 sender no-show and §6.4 refusal both leave the package
+    // behind, but for different reasons with different consequences —
+    // fold refusals into the not-found bucket only for the
+    // completeness check.
+    const notFoundSet = new Set([
+      ...(dto.packagesNotFound ?? []),
+      ...refusalByLink.keys(),
+    ]);
 
     this.validateAllResolved(
       boarding.map((p) => p.id),
@@ -620,22 +687,86 @@ export class DriverTripsService {
         if (isPicked) pickedUpRequestIds.push(link.tripRequest.id);
         else noShowRequestIds.push(link.tripRequest.id);
       }
+      let packageCashAtStop = 0;
       for (const link of collecting) {
         const collected = collectedSet.has(link.id);
-        link.status = collected
-          ? StopPackageStatus.COLLECTED
-          : StopPackageStatus.NOT_FOUND;
+        const refusal = refusalByLink.get(link.id);
+        if (collected) {
+          link.status = StopPackageStatus.COLLECTED;
+          // §6.1 — the sender pays at pickup.
+          packageCashAtStop += Number(link.fee);
+        } else if (refusal) {
+          // §6.4 — logged with reason; sender not charged; never a
+          // decline penalty.
+          link.status = StopPackageStatus.REFUSED;
+          link.refusalReason = refusal.reason;
+          link.refusalPhotoUrl = (refusal.photoUrl ?? null) as string;
+        } else {
+          link.status = StopPackageStatus.NOT_FOUND;
+        }
         link.confirmedAt = now;
         await mgr.save(link);
         await mgr.update(
           PackageDelivery,
           { id: link.packageDelivery.id },
-          {
-            status: collected ? PackageStatus.PICKED_UP : PackageStatus.CANCELLED,
-          },
+          collected
+            ? { status: PackageStatus.PICKED_UP }
+            : {
+                status: PackageStatus.CANCELLED,
+                cancellationReason: refusal
+                  ? `Refused at pickup by driver: ${refusal.reason}${refusal.notes ? ` — ${refusal.notes}` : ''}`
+                  : 'Sender no-show at pickup',
+              },
         );
         if (collected) collectedPackageIds.push(link.packageDelivery.id);
         else notFoundPackageIds.push(link.packageDelivery.id);
+      }
+
+      if (packageCashAtStop > 0) {
+        await mgr.increment(
+          DriverTrip,
+          { id: trip.id },
+          'totalCashCollected',
+          packageCashAtStop,
+        );
+      }
+
+      // Anyone/anything that never entered the vehicle can't be
+      // dropped off — resolve their downstream links now so the
+      // dropoff stops don't demand action on them.
+      if (noShowRequestIds.length) {
+        await mgr
+          .createQueryBuilder()
+          .update(DriverTripStopPassenger)
+          .set({ status: StopPassengerStatus.NO_SHOW, confirmedAt: now })
+          .where('"tripRequestId" IN (:...ids)', { ids: noShowRequestIds })
+          .andWhere('role = :role', { role: StopPassengerRole.ALIGHTING })
+          .andWhere('status = :pending', {
+            pending: StopPassengerStatus.PENDING,
+          })
+          .andWhere(
+            '"stopId" IN (SELECT id FROM driver_trip_stops WHERE "tripId" = :tripId)',
+            { tripId: trip.id },
+          )
+          .execute();
+      }
+      if (notFoundPackageIds.length) {
+        await mgr
+          .createQueryBuilder()
+          .update(DriverTripStopPackage)
+          .set({ status: StopPackageStatus.NOT_FOUND, confirmedAt: now })
+          .where('"packageDeliveryId" IN (:...ids)', {
+            ids: notFoundPackageIds,
+          })
+          .andWhere('role = :role', { role: StopPackageRole.DELIVERING })
+          .andWhere('status = :pending', {
+            pending: StopPackageStatus.PENDING,
+          })
+          .andWhere(
+            '"stopId" IN (SELECT id FROM driver_trip_stops WHERE "tripId" = :tripId)',
+            { tripId: trip.id },
+          )
+          .execute();
       }
 
       stop.status = DriverTripStopStatus.CONFIRMED;
@@ -743,11 +874,19 @@ export class DriverTripsService {
     }
 
     const alighting = await this.stopPassengersRepo.find({
-      where: { stop: { id: stop.id }, role: StopPassengerRole.ALIGHTING },
+      where: {
+        stop: { id: stop.id },
+        role: StopPassengerRole.ALIGHTING,
+        status: StopPassengerStatus.PENDING,
+      },
       relations: ['tripRequest'],
     });
     const delivering = await this.stopPackagesRepo.find({
-      where: { stop: { id: stop.id }, role: StopPackageRole.DELIVERING },
+      where: {
+        stop: { id: stop.id },
+        role: StopPackageRole.DELIVERING,
+        status: StopPackageStatus.PENDING,
+      },
       relations: ['packageDelivery'],
     });
 
@@ -766,7 +905,10 @@ export class DriverTripsService {
       }
     }
 
-    const deliveredSet = new Set(dto.packagesDelivered ?? []);
+    const deliveredEntries = new Map(
+      (dto.packagesDelivered ?? []).map((e) => [e.id, e]),
+    );
+    const deliveredSet = new Set(deliveredEntries.keys());
     const failures = dto.deliveryFailures ?? [];
     const failedIds = new Set(failures.map((f) => f.id));
     this.validateAllResolved(
@@ -809,13 +951,24 @@ export class DriverTripsService {
       for (const link of delivering) {
         const delivered = deliveredSet.has(link.id);
         if (delivered) {
+          const entry = deliveredEntries.get(link.id)!;
+          // §6.5 — the recipient-held code must match. Wrong code =
+          // wrong recipient; the driver must not hand the parcel over.
+          const expected = link.packageDelivery.deliveryCode;
+          if (expected && entry.deliveryCode !== expected) {
+            throw new BadRequestException(
+              `Wrong delivery code for package stop item #${link.id}`,
+            );
+          }
           link.status = StopPackageStatus.DELIVERED;
-          cashAddedAtStop += Number(link.fee);
-          cashAddedTotal += Number(link.fee);
+          // No cash here — the sender paid at pickup (§6.1).
           await mgr.update(
             PackageDelivery,
             { id: link.packageDelivery.id },
-            { status: PackageStatus.DELIVERED },
+            {
+              status: PackageStatus.DELIVERED,
+              deliveredPhotoUrl: (entry.photoUrl ?? null) as string,
+            },
           );
           deliveredPackageIds.push(link.packageDelivery.id);
         } else {
@@ -942,10 +1095,35 @@ export class DriverTripsService {
       trip.netEarnings = netEarnings;
       await mgr.save(trip);
 
+      // Close the linked Stage-1 group too (master spec §11:
+      // IN_PROGRESS → COMPLETED). Without this the group sat at
+      // 'assigned' forever and cluttered the admin groups page.
+      await mgr.query(
+        `UPDATE trip_groups g SET status = 'completed', "completedAt" = $2
+         WHERE g.id IN (
+           SELECT DISTINCT "tripGroupId" FROM trip_offer_history
+           WHERE "driverTripId" = $1 AND "tripGroupId" IS NOT NULL
+         ) AND g.status NOT IN ('completed', 'cancelled')`,
+        [trip.id, now],
+      );
+
       // Driver returns to inactive (must re-activate for next session per spec)
       // and accumulates the platform's commission as outstanding balance.
       const driver = await mgr.findOne(Driver, { where: { id: driverId } });
       if (driver) {
+        // Going-home auto-offline (master spec §9.6): if the driver was
+        // in going-home mode and this trip's destination matches their
+        // home city, they get locked offline until the configured day
+        // boundary (default: local midnight).
+        const goingHomeCompleted =
+          driver.prefGoingHome &&
+          driver.homeCity != null &&
+          (driver.homeCity ?? '').toLowerCase() ===
+            (trip.destinationCity ?? '').toLowerCase();
+        if (goingHomeCompleted) {
+          driver.goingHomeOfflineUntil = nextLocalMidnight();
+        }
+
         driver.status = DriverStatus.INACTIVE;
         driver.totalTrips = (driver.totalTrips ?? 0) + 1;
         driver.outstandingBalance =
@@ -1145,7 +1323,146 @@ export class DriverTripsService {
       payload: { tripId: trip.id, zone },
     });
 
+    // Restart the cascade for the linked TripGroup so a new driver
+    // gets offered the trip. Legacy trips (no offer_history row) are
+    // a no-op.
+    try {
+      await this.assignmentService.handleDriverCancel(trip.id);
+    } catch (err) {
+      this.logger.warn(
+        `AssignmentService.handleDriverCancel failed for trip #${trip.id}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+
     return txnResult;
+  }
+
+  /**
+   * Ops-initiated full stop from the admin portal. Unlike a driver
+   * cancel (which re-queues the group for another driver), an admin
+   * cancel kills the trip outright: trip + linked requests + packages
+   * + trip group all go CANCELLED, the driver is released back to
+   * ACTIVE with **no penalty** (it wasn't their decision), and every
+   * affected passenger/sender is notified.
+   *
+   * Same after-pickup guard as the driver flow — once someone is in
+   * the car, ops resolves by phone, not by button.
+   */
+  async adminCancel(
+    tripId: number,
+    adminId: number,
+    reason: string,
+  ): Promise<{ tripId: number; cancelledRequestIds: number[] }> {
+    const trip = await this.tripsRepo.findOne({
+      where: { id: tripId },
+      relations: ['driver'],
+    });
+    if (!trip) {
+      throw new NotFoundException('Trip not found');
+    }
+    if (
+      trip.status !== DriverTripStatus.ACCEPTED &&
+      trip.status !== DriverTripStatus.IN_PROGRESS
+    ) {
+      throw new BadRequestException(
+        `Only accepted or in-progress trips can be cancelled (this one is ${trip.status}).`,
+      );
+    }
+    if (trip.status === DriverTripStatus.IN_PROGRESS) {
+      const anyPickedUp = await this.stopPassengersRepo
+        .createQueryBuilder('sp')
+        .innerJoin('sp.stop', 'stop')
+        .where('stop.tripId = :tripId', { tripId: trip.id })
+        .andWhere('sp.status = :picked', {
+          picked: StopPassengerStatus.PICKED_UP,
+        })
+        .getCount();
+      if (anyPickedUp > 0) {
+        throw new ForbiddenException(
+          'Passengers are already in the vehicle — resolve this trip with the driver directly instead of cancelling.',
+        );
+      }
+    }
+
+    const tripRequestIds = await this.collectLinkedTripRequestIds(trip.id);
+    const packageIds = await this.collectLinkedPackageIds(trip.id);
+    const driverId = trip.driver?.id ?? null;
+
+    await this.dataSource.transaction(async (mgr) => {
+      const now = new Date();
+      trip.status = DriverTripStatus.CANCELLED;
+      trip.cancelledAt = now;
+      trip.cancellationReason = reason;
+      trip.cancelledByAdminId = adminId;
+      await mgr.save(trip);
+
+      if (tripRequestIds.length) {
+        await mgr
+          .createQueryBuilder()
+          .update(TripRequest)
+          .set({
+            status: TripStatus.CANCELLED,
+            statusUpdatedAt: now,
+            cancellationReason: reason,
+            cancelledByAdminId: adminId,
+          })
+          .whereInIds(tripRequestIds)
+          .execute();
+      }
+      if (packageIds.length) {
+        await mgr
+          .createQueryBuilder()
+          .update(PackageDelivery)
+          .set({ status: PackageStatus.CANCELLED })
+          .whereInIds(packageIds)
+          .execute();
+      }
+
+      // Kill the linked trip group too — admin cancel must NOT
+      // restart the cascade (unlike a driver cancel).
+      await mgr.query(
+        `UPDATE trip_groups g SET status = 'cancelled'
+         WHERE g.id IN (
+           SELECT DISTINCT "tripGroupId" FROM trip_offer_history
+           WHERE "driverTripId" = $1 AND "tripGroupId" IS NOT NULL
+         ) AND g.status NOT IN ('completed', 'cancelled')`,
+        [trip.id],
+      );
+
+      // Release the driver, no penalty — ops made this call.
+      if (driverId) {
+        await mgr.update(Driver, { id: driverId }, {
+          status: DriverStatus.ACTIVE,
+        });
+      }
+    });
+
+    const passengerUserIds =
+      await this.passengerUserIdsForRequests(tripRequestIds);
+    await this.emitPassengerNotifications({
+      userIds: passengerUserIds,
+      type: PassengerNotificationType.TRIP_CANCELLED,
+      titleEn: 'Trip cancelled by Sarfees',
+      titleAr: 'قامت سرفيس بإلغاء الرحلة',
+      bodyEn: 'Sarfees support cancelled your trip. Please book again or contact support.',
+      bodyAr: 'ألغى فريق دعم سرفيس رحلتك. يرجى الحجز مرة أخرى أو التواصل مع الدعم.',
+      payload: { tripId: trip.id, byAdmin: true },
+    });
+    const senderUserIds = await this.senderUserIdsForPackages(packageIds);
+    await this.emitPassengerNotifications({
+      userIds: senderUserIds,
+      type: PassengerNotificationType.PACKAGE_CANCELLED,
+      titleEn: 'Package delivery cancelled by Sarfees',
+      titleAr: 'قامت سرفيس بإلغاء توصيل الطرد',
+      bodyEn: 'Sarfees support cancelled the trip carrying your package. Please rebook or contact support.',
+      bodyAr: 'ألغى فريق دعم سرفيس الرحلة التي تحمل طردك. يرجى إعادة الحجز أو التواصل مع الدعم.',
+      payload: { tripId: trip.id, byAdmin: true },
+    });
+
+    this.logger.log(
+      `Admin #${adminId} cancelled trip #${trip.id} (${tripRequestIds.length} requests, ${packageIds.length} packages): ${reason}`,
+    );
+    return { tripId: trip.id, cancelledRequestIds: tripRequestIds };
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -1160,19 +1477,21 @@ export class DriverTripsService {
 
     if (
       dto.type === DriverTripType.WOMEN_ONLY &&
-      driver.gender !== 'female'
+      driver.gender !== 'female' &&
+      !dto.allowMaleForWomenOnly
     ) {
       throw new BadRequestException(
         'Cannot offer a women-only trip to a non-female driver',
       );
     }
 
-    const tripRequests = dto.tripRequestIds.length
+    const tripRequestIds = dto.tripRequestIds ?? [];
+    const tripRequests = tripRequestIds.length
       ? await this.tripRequestsRepo.find({
-          where: { id: In(dto.tripRequestIds) },
+          where: { id: In(tripRequestIds) },
         })
       : [];
-    if (tripRequests.length !== dto.tripRequestIds.length) {
+    if (tripRequests.length !== tripRequestIds.length) {
       throw new NotFoundException('One or more TripRequests not found');
     }
 
@@ -1221,48 +1540,88 @@ export class DriverTripsService {
       });
       const savedTrip = await mgr.save(trip);
 
-      // Pickup stop (order 0)
-      const pickupStop = mgr.create(DriverTripStop, {
-        trip: { id: savedTrip.id },
-        order: 0,
-        type: DriverTripStopType.PICKUP,
-        city: dto.originCity,
-        address: dto.pickupAddress,
-        lat: dto.pickupLat,
-        lng: dto.pickupLng,
-        status: DriverTripStopStatus.PENDING,
-        cashExpected: 0,
-      });
-      const savedPickup = await mgr.save(pickupStop);
+      // Stop plan (master spec §6.3 ordering): package collection
+      // first, then ONE pickup stop PER passenger at their own
+      // requested location, then ONE dropoff stop PER passenger,
+      // then package delivery last. Each passenger's cash is expected
+      // at their own dropoff stop.
+      let order = 0;
 
-      // Dropoff stop (order 1)
-      const dropoffStop = mgr.create(DriverTripStop, {
-        trip: { id: savedTrip.id },
-        order: 1,
-        type: DriverTripStopType.DROPOFF,
-        city: dto.destinationCity,
-        address: dto.dropoffAddress,
-        lat: dto.dropoffLat,
-        lng: dto.dropoffLng,
-        status: DriverTripStopStatus.PENDING,
-        cashExpected: totalCashExpected,
-      });
-      const savedDropoff = await mgr.save(dropoffStop);
+      if (packages.length) {
+        const pkgPickup = await mgr.save(
+          mgr.create(DriverTripStop, {
+            trip: { id: savedTrip.id },
+            order: order++,
+            type: DriverTripStopType.PICKUP,
+            city: dto.originCity,
+            address: dto.pickupAddress,
+            lat: dto.pickupLat,
+            lng: dto.pickupLng,
+            status: DriverTripStopStatus.PENDING,
+            // §6.1 — the sender pays at pickup, so the package cash is
+            // expected here, not at the delivery stop.
+            cashExpected: totalPackageCash,
+          }),
+        );
+        for (const pkg of packages) {
+          await mgr.save(
+            mgr.create(DriverTripStopPackage, {
+              stop: { id: pkgPickup.id },
+              packageDelivery: { id: pkg.id },
+              role: StopPackageRole.COLLECTING,
+              fee: Number(pkg.deliveryFee),
+              status: StopPackageStatus.PENDING,
+            }),
+          );
+        }
+      }
 
-      // Build passenger junctions
+      // Per-passenger pickups at each passenger's own point. Fall
+      // back to the DTO's canonical pickup when a request predates
+      // location capture (defensive; shouldn't happen in practice).
       for (const tr of tripRequests) {
+        const stop = await mgr.save(
+          mgr.create(DriverTripStop, {
+            trip: { id: savedTrip.id },
+            order: order++,
+            type: DriverTripStopType.PICKUP,
+            city: dto.originCity,
+            address: dto.pickupAddress,
+            lat: tr.departureLocation?.lat ?? dto.pickupLat,
+            lng: tr.departureLocation?.lng ?? dto.pickupLng,
+            status: DriverTripStopStatus.PENDING,
+            cashExpected: 0,
+          }),
+        );
         await mgr.save(
           mgr.create(DriverTripStopPassenger, {
-            stop: { id: savedPickup.id },
+            stop: { id: stop.id },
             tripRequest: { id: tr.id },
             role: StopPassengerRole.BOARDING,
             fare: Number(tr.totalFare),
             status: StopPassengerStatus.PENDING,
           }),
         );
+      }
+
+      // Per-passenger dropoffs, same order — cash collected here.
+      for (const tr of tripRequests) {
+        const stop = await mgr.save(
+          mgr.create(DriverTripStop, {
+            trip: { id: savedTrip.id },
+            order: order++,
+            type: DriverTripStopType.DROPOFF,
+            city: dto.destinationCity,
+            address: dto.dropoffAddress,
+            lat: tr.arrivalLocation?.lat ?? dto.dropoffLat,
+            lng: tr.arrivalLocation?.lng ?? dto.dropoffLng,
+            status: DriverTripStopStatus.PENDING,
+            cashExpected: Number(tr.totalFare),
+          }),
+        );
         await mgr.save(
           mgr.create(DriverTripStopPassenger, {
-            stop: { id: savedDropoff.id },
+            stop: { id: stop.id },
             tripRequest: { id: tr.id },
             role: StopPassengerRole.ALIGHTING,
             fare: Number(tr.totalFare),
@@ -1271,26 +1630,32 @@ export class DriverTripsService {
         );
       }
 
-      // Build package junctions
-      for (const pkg of packages) {
-        await mgr.save(
-          mgr.create(DriverTripStopPackage, {
-            stop: { id: savedPickup.id },
-            packageDelivery: { id: pkg.id },
-            role: StopPackageRole.COLLECTING,
-            fee: Number(pkg.deliveryFee),
-            status: StopPackageStatus.PENDING,
+      if (packages.length) {
+        const pkgDropoff = await mgr.save(
+          mgr.create(DriverTripStop, {
+            trip: { id: savedTrip.id },
+            order: order++,
+            type: DriverTripStopType.DROPOFF,
+            city: dto.destinationCity,
+            address: dto.dropoffAddress,
+            lat: dto.dropoffLat,
+            lng: dto.dropoffLng,
+            status: DriverTripStopStatus.PENDING,
+            // Cash already collected at pickup (§6.1).
+            cashExpected: 0,
           }),
         );
-        await mgr.save(
-          mgr.create(DriverTripStopPackage, {
-            stop: { id: savedDropoff.id },
-            packageDelivery: { id: pkg.id },
-            role: StopPackageRole.DELIVERING,
-            fee: Number(pkg.deliveryFee),
-            status: StopPackageStatus.PENDING,
-          }),
-        );
+        for (const pkg of packages) {
+          await mgr.save(
+            mgr.create(DriverTripStopPackage, {
+              stop: { id: pkgDropoff.id },
+              packageDelivery: { id: pkg.id },
+              role: StopPackageRole.DELIVERING,
+              fee: Number(pkg.deliveryFee),
+              status: StopPackageStatus.PENDING,
+            }),
+          );
+        }
       }
 
       return savedTrip;

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -22,8 +23,17 @@ import { AdminDriversModule } from './admins/drivers/admin-drivers.module';
 import { AdminTripsModule } from './admins/trips/admin-trips.module';
 import { AdminEarningsModule } from './admins/earnings/admin-earnings.module';
 import { AdminPassengerRequestsModule } from './admins/passenger-requests/admin-passenger-requests.module';
+import { AdminTripGroupsModule } from './admins/trip-groups/admin-trip-groups.module';
+import { AdminPackagesModule } from './admins/packages/admin-packages.module';
+import { EarlyAccessModule } from './early-access/early-access.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import { FaqModule } from './faq/faq.module';
+import { MapModule } from './shared/map/map.module';
+import { MatchingConfigModule } from './matching-config/matching-config.module';
+import { MatchingModule } from './matching/matching.module';
+import { GroupingModule } from './grouping/grouping.module';
+import { AssignmentModule } from './assignment/assignment.module';
+import { AdminEscalationsModule } from './admins/escalations/admin-escalations.module';
 import * as path from 'path';
 @Module({
   imports: [
@@ -38,6 +48,7 @@ import * as path from 'path';
     ConfigModule.forRoot({
       isGlobal: true, // Make ConfigModule available globally
     }),
+    ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => {
@@ -84,8 +95,17 @@ import * as path from 'path';
     AdminTripsModule,
     AdminEarningsModule,
     AdminPassengerRequestsModule,
+    AdminTripGroupsModule,
+    AdminPackagesModule,
+    EarlyAccessModule,
     AnnouncementsModule,
     FaqModule,
+    MapModule,
+    MatchingConfigModule,
+    GroupingModule,
+    AssignmentModule,
+    MatchingModule,
+    AdminEscalationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

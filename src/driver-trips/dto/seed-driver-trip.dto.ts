@@ -3,6 +3,7 @@ import {
   ArrayNotEmpty,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsInt,
@@ -28,6 +29,18 @@ export class SeedDriverTripDto {
   @ApiProperty({ enum: DriverTripType })
   @IsEnum(DriverTripType)
   type: DriverTripType;
+
+  /**
+   * §9.4 male-driver fallback. The matcher sets this on its seedTrip
+   * calls: female drivers always outrank males for women-only groups,
+   * so the cascade/broadcast reaching a male driver means no female
+   * was available. Manual and dev assignment never set it — a human
+   * assigning a male driver to a women-only trip stays a hard error.
+   */
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  allowMaleForWomenOnly?: boolean;
 
   @ApiProperty({ example: 'Irbid' })
   @IsString()
@@ -78,12 +91,17 @@ export class SeedDriverTripDto {
   @IsString()
   dropoffAddress?: string;
 
-  @ApiProperty({ type: [Number], example: [1] })
+  @ApiPropertyOptional({
+    type: [Number],
+    example: [1],
+    description:
+      'May be empty for packages-only trips — at least one request OR package must be provided.',
+  })
+  @IsOptional()
   @IsArray()
-  @ArrayNotEmpty()
   @IsInt({ each: true })
   @ArrayUnique()
-  tripRequestIds: number[];
+  tripRequestIds?: number[];
 
   @ApiPropertyOptional({ type: [Number], example: [] })
   @IsOptional()

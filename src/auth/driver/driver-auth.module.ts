@@ -16,7 +16,7 @@ import { JwtDriverRefreshStrategy } from './strategies/jwt-driver-refresh.strate
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>('JWT_DRIVER_ACCESS_SECRET'),
-        signOptions: { expiresIn: '15m' },
+        signOptions: { expiresIn: '24h' },
       }),
       inject: [ConfigService],
     }),

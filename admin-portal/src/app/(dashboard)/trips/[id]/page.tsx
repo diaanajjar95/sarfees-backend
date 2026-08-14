@@ -19,6 +19,8 @@ import {
 } from 'lucide-react';
 import { ApiError, apiFetch } from '@/lib/api';
 import type { AdminTripDetail, LifecycleEventKind } from '@/lib/types';
+import CancelWithReason from '../../_components/CancelWithReason';
+import { cancelTripAction } from '../actions';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -73,27 +75,38 @@ export default async function TripDetailPage({ params }: PageProps) {
         <ChevronLeft size={14} /> Back to trips
       </Link>
 
-      <div className="mt-2">
-        <h1 className="text-2xl font-extrabold">
-          {trip.originCity} → {trip.destinationCity}
-        </h1>
-        <div
-          className="mt-1 flex items-center gap-3 text-sm flex-wrap"
-          style={{ color: 'var(--color-sarfees-muted)' }}
-        >
-          <span>#{trip.id}</span>
-          <span>· {trip.type.replace('_', ' ')}</span>
-          <span
-            className="status-pill"
-            style={{
-              color: STATUS_COLOR[trip.status] ?? '#9090A0',
-              border: `1px solid ${STATUS_COLOR[trip.status] ?? 'var(--color-sarfees-border)'}`,
-            }}
+      <div className="mt-2 flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-extrabold">
+            {trip.originCity} → {trip.destinationCity}
+          </h1>
+          <div
+            className="mt-1 flex items-center gap-3 text-sm flex-wrap"
+            style={{ color: 'var(--color-sarfees-muted)' }}
           >
-            {trip.status.replace('_', ' ')}
-          </span>
-          <span>· departs {new Date(trip.departureTime).toLocaleString()}</span>
+            <span>#{trip.id}</span>
+            <span>· {trip.type.replace('_', ' ')}</span>
+            <span
+              className="status-pill"
+              style={{
+                color: STATUS_COLOR[trip.status] ?? '#9090A0',
+                border: `1px solid ${STATUS_COLOR[trip.status] ?? 'var(--color-sarfees-border)'}`,
+              }}
+            >
+              {trip.status.replace('_', ' ')}
+            </span>
+            <span>· departs {new Date(trip.departureTime).toLocaleString()}</span>
+          </div>
         </div>
+        {(trip.status === 'accepted' || trip.status === 'in_progress') && (
+          <CancelWithReason
+            action={cancelTripAction}
+            idFieldName="tripId"
+            id={trip.id}
+            label="Cancel trip"
+            consequence="This kills the trip for everyone: all passenger requests and packages on it are cancelled and notified, and the driver is released without penalty. Blocked once someone has been picked up."
+          />
+        )}
       </div>
 
       {trip.cancellation && (

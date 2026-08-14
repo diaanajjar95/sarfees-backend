@@ -27,6 +27,8 @@ import {
   ListDriversResponseDto,
 } from './dto/list-drivers.dto';
 import { AdminDriverDetailDto } from './dto/driver-detail.dto';
+import { LiveMapResponseDto } from './dto/live-map.dto';
+import { TripRouteDto } from './dto/trip-route.dto';
 import { DriverProfileResponseDto } from '../../drivers/dto/driver-profile-response.dto';
 import { Roles } from '../../shared/decorators/roles.decorator';
 import { RolesGuard } from '../../shared/guards/roles.guard';
@@ -38,6 +40,30 @@ import { AdminRole } from '../../shared/enums/admin-role.enum';
 @Controller('admin/drivers')
 export class AdminDriversController {
   constructor(private readonly service: AdminDriversService) {}
+
+  @ApiOperation({
+    summary: 'Live map — currently active drivers with location',
+    description:
+      'Small payload for the admin portal driver map. Returns ACTIVE + ON_TRIP drivers with a location snapshot. Poll every 30 s.',
+  })
+  @ApiResponse({ status: 200, type: LiveMapResponseDto })
+  // Two-segment path so it never collides with :id (single-segment).
+  @Get('live/map')
+  liveMap(): Promise<LiveMapResponseDto> {
+    return this.service.liveMap();
+  }
+
+
+  @ApiOperation({
+    summary: 'Current-trip route for the admin map',
+    description:
+      "Returns the ordered stops of the driver's currently-active trip (ACCEPTED or IN_PROGRESS) plus the road-following polyline from OSRM when available.",
+  })
+  @ApiResponse({ status: 200, type: TripRouteDto })
+  @Get(':id/route')
+  tripRoute(@Param('id', ParseIntPipe) id: number): Promise<TripRouteDto> {
+    return this.service.tripRoute(id);
+  }
 
   @ApiOperation({ summary: 'List drivers (paginated, filterable)' })
   @ApiResponse({ status: 200, type: ListDriversResponseDto })

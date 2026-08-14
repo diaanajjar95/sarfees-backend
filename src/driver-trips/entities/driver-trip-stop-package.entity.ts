@@ -10,6 +10,7 @@ import { DriverTripStop } from './driver-trip-stop.entity';
 import { PackageDelivery } from '../../packages/entities/package-delivery.entity';
 import {
   DeliveryFailureReason,
+  PackageRefusalReason,
   StopPackageRole,
   StopPackageStatus,
 } from '../../shared/enums/stop-package-status.enum';
@@ -42,6 +43,14 @@ export class DriverTripStopPackage {
 
   @Column({ type: 'enum', enum: DeliveryFailureReason, nullable: true })
   failureReason: DeliveryFailureReason;
+
+  /** §6.4 pickup refusal — reason the driver selected in-app. */
+  @Column({ type: 'enum', enum: PackageRefusalReason, nullable: true })
+  refusalReason: PackageRefusalReason | null;
+
+  /** Optional photo the driver attached to the refusal. */
+  @Column({ type: 'text', nullable: true })
+  refusalPhotoUrl: string | null;
 
   @Column({ type: 'text', nullable: true })
   failureNotes: string;

@@ -1,0 +1,372 @@
+{
+  "info": {
+    "name": "Sarfees — Package Delivery Cycle (spec §6)",
+    "description": "Full package lifecycle against the §6 rules of the master spec: sender creates deliveries (with the 4-digit delivery code), ops assigns a packages-only trip, the driver collects one parcel and REFUSES the other with a reason, cash is taken at PICKUP, and delivery closes with OTP + photo.\n\n## Sequence\n1. **Auth** — sender + driver OTP logins (mock OTP `1234`) and admin login.\n2. **Sender creates** — prohibited-items list (show next to the attestation), fee estimate, package A (will be delivered) and package B (will be refused). Each response carries `deliveryCode` — the code the recipient must tell the driver. Also demos the free cancel while PENDING (package C).\n3. **Assign** — admin manual-assigns a packages-only trip carrying A + B to the driver (5-min offer countdown), driver accepts. The manifest maps each package to its stop links and the scripts wire everything into variables.\n4. **Execute** — start → arrive at the collection stop → confirm-pickup: **collect A (cash is charged here — sender pays at pickup), refuse B** (`not_as_declared`) → arrive at the delivery stop → **wrong delivery code → 400** (expected!) → correct code + handover photo → 200 → complete (1 delivered, cash from pickup only) → sender detail shows A `DELIVERED` with the photo and B `CANCELLED` with the refusal reason.\n\n## Prereqs\n- **The §6 compliance build must be deployed** (PR feat/packages-spec-compliance). Until then, run against a local boot (`baseUrl = http://localhost:3000`).\n- Seeded sender `790000001` + driver `770000001` with mock OTP `1234`.\n- Driver has no leftover active trip.\n- Responses are wrapped `{ code, message, data }`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://169.58.67.105" },
+    { "key": "countryCode", "value": "+962" },
+    { "key": "otp", "value": "1234" },
+    { "key": "senderPhone", "value": "790000001" },
+    { "key": "driverPhone", "value": "770000001" },
+    { "key": "adminEmail", "value": "admin@sarfees.com" },
+    { "key": "adminPassword", "value": "SarfeesAdmin2026!" },
+    { "key": "senderToken", "value": "" },
+    { "key": "driverToken", "value": "" },
+    { "key": "adminToken", "value": "" },
+    { "key": "packageAId", "value": "" },
+    { "key": "packageACode", "value": "" },
+    { "key": "packageBId", "value": "" },
+    { "key": "packageCId", "value": "" },
+    { "key": "tripId", "value": "" },
+    { "key": "pickupStopId", "value": "" },
+    { "key": "dropoffStopId", "value": "" },
+    { "key": "collectLinkA", "value": "" },
+    { "key": "collectLinkB", "value": "" },
+    { "key": "deliverLinkA", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth — sender, driver, admin",
+      "item": [
+        {
+          "name": "1.1 Sender — request OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{senderPhone}}\",\n  \"countryCode\": \"{{countryCode}}\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('OTP requested', () => pm.response.to.have.status(201));"] } }]
+        },
+        {
+          "name": "1.2 Sender — verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/verify-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{senderPhone}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"otp\": \"{{otp}}\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('senderToken', d.accessToken);",
+            "pm.test('sender token saved', () => pm.expect(d.accessToken).to.be.a('string'));"
+          ] } }]
+        },
+        {
+          "name": "1.3 Driver — request OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/driver/request-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{driverPhone}}\",\n  \"countryCode\": \"{{countryCode}}\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('OTP requested', () => pm.response.to.have.status(201));"] } }]
+        },
+        {
+          "name": "1.4 Driver — verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/driver/verify-otp",
+            "body": { "mode": "raw", "raw": "{\n  \"phoneNumber\": \"{{driverPhone}}\",\n  \"countryCode\": \"{{countryCode}}\",\n  \"otp\": \"{{otp}}\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('driverToken', d.accessToken);",
+            "pm.test('driver token saved', () => pm.expect(d.accessToken).to.be.a('string'));"
+          ] } }]
+        },
+        {
+          "name": "1.5 Admin — login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/admin/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('adminToken', d.accessToken);",
+            "pm.test('admin token saved', () => pm.expect(d.accessToken).to.be.a('string'));"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "2. Sender creates deliveries",
+      "item": [
+        {
+          "name": "2.1 Prohibited items (show next to the attestation)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}" }],
+            "url": "{{baseUrl}}/packages/prohibited-items"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.test('bilingual list returned', () => { pm.expect(d.en).to.be.an('array').that.is.not.empty; pm.expect(d.ar).to.be.an('array').that.is.not.empty; });",
+            "console.log('Prohibited (en):', d.en.join(' | '));"
+          ] } }]
+        },
+        {
+          "name": "2.2 Fee estimate",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{senderToken}}" }
+            ],
+            "url": "{{baseUrl}}/packages/estimate",
+            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 1,\n  \"arrivalCityId\": 2,\n  \"packageSize\": \"SMALL\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.test('fee estimated', () => pm.expect(d.deliveryFee).to.be.a('number'));"
+          ] } }]
+        },
+        {
+          "name": "2.3 Create package A (will be delivered)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{senderToken}}" }
+            ],
+            "url": "{{baseUrl}}/packages/request",
+            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 1,\n  \"arrivalCityId\": 2,\n  \"pickupLocation\": { \"lat\": 31.9539, \"lng\": 35.9106 },\n  \"dropOffLocation\": { \"lat\": 32.5556, \"lng\": 35.8500 },\n  \"packageSize\": \"SMALL\",\n  \"weightKg\": 2,\n  \"packageDescription\": \"Documents envelope\",\n  \"receiverName\": \"Test Receiver\",\n  \"receiverPhone\": \"0791112223\",\n  \"termsAccepted\": true,\n  \"isImmediate\": true\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('packageAId', d.id);",
+            "pm.collectionVariables.set('packageACode', d.deliveryCode);",
+            "pm.test('package A created with deliveryCode', () => pm.expect(d.deliveryCode).to.match(/^\\d{4}$/));",
+            "console.log('Package A =', d.id, '| deliveryCode =', d.deliveryCode, '(the recipient must tell this to the driver)');"
+          ] } }]
+        },
+        {
+          "name": "2.4 Create package B (will be REFUSED at pickup)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{senderToken}}" }
+            ],
+            "url": "{{baseUrl}}/packages/request",
+            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 1,\n  \"arrivalCityId\": 2,\n  \"pickupLocation\": { \"lat\": 31.9539, \"lng\": 35.9106 },\n  \"dropOffLocation\": { \"lat\": 32.5556, \"lng\": 35.8500 },\n  \"packageSize\": \"MEDIUM\",\n  \"weightKg\": 4,\n  \"packageDescription\": \"Box — declared as clothes\",\n  \"receiverName\": \"Other Receiver\",\n  \"receiverPhone\": \"0794445556\",\n  \"termsAccepted\": true,\n  \"isImmediate\": true\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('packageBId', d.id);",
+            "pm.test('package B created', () => pm.expect(d.id).to.exist);"
+          ] } }]
+        },
+        {
+          "name": "2.5 Free cancel while PENDING (package C demo)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{senderToken}}" }
+            ],
+            "url": "{{baseUrl}}/packages/request",
+            "body": { "mode": "raw", "raw": "{\n  \"departureCityId\": 1,\n  \"arrivalCityId\": 2,\n  \"pickupLocation\": { \"lat\": 31.9539, \"lng\": 35.9106 },\n  \"dropOffLocation\": { \"lat\": 32.5556, \"lng\": 35.8500 },\n  \"packageSize\": \"SMALL\",\n  \"weightKg\": 1,\n  \"packageDescription\": \"Cancel demo\",\n  \"receiverName\": \"X\",\n  \"receiverPhone\": \"0790000000\",\n  \"termsAccepted\": true,\n  \"isImmediate\": true\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.collectionVariables.set('packageCId', d.id);",
+            "pm.test('package C created', () => pm.expect(d.id).to.exist);",
+            "console.log('Now run 2.6 to cancel it for free.');"
+          ] } }]
+        },
+        {
+          "name": "2.6 Cancel package C → free (feeApplies false)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}" }],
+            "url": "{{baseUrl}}/packages/{{packageCId}}/cancel"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.test('cancelled free of charge', () => { pm.expect(d.status).to.eql('CANCELLED'); pm.expect(d.cancellationFeeApplies).to.eql(false); });"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "3. Assign — packages-only trip",
+      "item": [
+        {
+          "name": "3.1 Admin manual-assign A + B to the driver",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+            ],
+            "url": "{{baseUrl}}/admin/trips/manual-assign",
+            "body": { "mode": "raw", "raw": "{\n  \"driverId\": 1,\n  \"type\": \"shared\",\n  \"originCity\": \"Amman\",\n  \"destinationCity\": \"Irbid\",\n  \"departureTime\": \"{{assignDeparture}}\",\n  \"pickupLat\": 31.9539, \"pickupLng\": 35.9106,\n  \"dropoffLat\": 32.5556, \"dropoffLng\": 35.8500,\n  \"packageDeliveryIds\": [{{packageAId}}, {{packageBId}}],\n  \"offerCountdownSeconds\": 300\n}" },
+            "description": "Packages-only trip (no tripRequestIds — allowed since the §6 compliance fix). 5-minute offer countdown."
+          },
+          "event": [
+            { "listen": "prerequest", "script": { "type": "text/javascript", "exec": [
+              "pm.collectionVariables.set('assignDeparture', new Date(Date.now() + 20 * 60 * 1000).toISOString());"
+            ] } },
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "const d = pm.response.json().data ?? pm.response.json();",
+              "pm.collectionVariables.set('tripId', d.tripId);",
+              "pm.test('trip offered', () => pm.expect(d.status).to.eql('offered'));",
+              "console.log('Trip', d.tripId, 'offered to the driver — run 3.2 within 5 minutes.');"
+            ] } }
+          ]
+        },
+        {
+          "name": "3.2 Driver accepts → wires stop + link variables",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/accept"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.test('accepted (post-commit status)', () => pm.expect(d.status).to.eql('accepted'));",
+            "const stops = d.stops.sort((a, b) => a.order - b.order);",
+            "const pickup = stops.find(s => s.type === 'pickup');",
+            "const dropoff = stops.find(s => s.type === 'dropoff');",
+            "pm.collectionVariables.set('pickupStopId', pickup.id);",
+            "pm.collectionVariables.set('dropoffStopId', dropoff.id);",
+            "// §6.1 — the whole package cash is expected at the COLLECTION stop.",
+            "pm.test('cash expected at pickup, zero at delivery', () => {",
+            "  pm.expect(pickup.cashExpected, 'pickup cash').to.be.above(0);",
+            "  pm.expect(dropoff.cashExpected, 'delivery cash').to.eql(0);",
+            "});",
+            "// Map stop links to packages via the PKG-<id> reference.",
+            "const aId = Number(pm.collectionVariables.get('packageAId'));",
+            "const bId = Number(pm.collectionVariables.get('packageBId'));",
+            "const byPkg = (arr, pkgId) => arr.find(p => p.reference === `PKG-${pkgId}`);",
+            "pm.collectionVariables.set('collectLinkA', byPkg(pickup.packages, aId).id);",
+            "pm.collectionVariables.set('collectLinkB', byPkg(pickup.packages, bId).id);",
+            "pm.collectionVariables.set('deliverLinkA', byPkg(dropoff.packages, aId).id);",
+            "console.log('Wired: pickupStop', pickup.id, 'dropoffStop', dropoff.id, '| collect A/B links', byPkg(pickup.packages, aId).id, byPkg(pickup.packages, bId).id, '| deliver A link', byPkg(dropoff.packages, aId).id);"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "4. Execute — collect, refuse, deliver with OTP",
+      "item": [
+        {
+          "name": "4.1 Start trip",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/start"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('started', () => pm.response.to.be.success);"] } }]
+        },
+        {
+          "name": "4.2 Arrive at collection stop",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/stops/{{pickupStopId}}/arrive"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('arrived', () => pm.response.to.be.success);"] } }]
+        },
+        {
+          "name": "4.3 Confirm pickup — collect A (cash here!), REFUSE B",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{driverToken}}" }
+            ],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/stops/{{pickupStopId}}/confirm-pickup",
+            "body": { "mode": "raw", "raw": "{\n  \"packagesCollected\": [{{collectLinkA}}],\n  \"packagesRefused\": [\n    {\n      \"id\": {{collectLinkB}},\n      \"reason\": \"not_as_declared\",\n      \"notes\": \"Contents did not match the declared description\"\n    }\n  ]\n}" },
+            "description": "§6.1: package A's fee is charged to the sender HERE. §6.4: package B is refused with a reason — sender not charged, refusal logged, never a decline penalty. B's delivery leg auto-resolves."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('pickup confirmed', () => pm.response.to.be.success);"] } }]
+        },
+        {
+          "name": "4.4 Arrive at delivery stop",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/stops/{{dropoffStopId}}/arrive"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('arrived', () => pm.response.to.be.success);"] } }]
+        },
+        {
+          "name": "4.5 Deliver with WRONG code → 400 (expected!)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{driverToken}}" }
+            ],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/stops/{{dropoffStopId}}/confirm-dropoff",
+            "body": { "mode": "raw", "raw": "{\n  \"packagesDelivered\": [\n    { \"id\": {{deliverLinkA}}, \"deliveryCode\": \"0000\" }\n  ]\n}" },
+            "description": "§6.5 — the recipient-held code is the proof of the right receiver. A wrong code MUST be rejected; this request passing (test green) means the API returned 400."
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('wrong code rejected with 400', () => pm.response.to.have.status(400));",
+            "console.log('Rejected as expected:', pm.response.json().message);"
+          ] } }]
+        },
+        {
+          "name": "4.6 Deliver with CORRECT code + photo → 200",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{driverToken}}" }
+            ],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/stops/{{dropoffStopId}}/confirm-dropoff",
+            "body": { "mode": "raw", "raw": "{\n  \"packagesDelivered\": [\n    {\n      \"id\": {{deliverLinkA}},\n      \"deliveryCode\": \"{{packageACode}}\",\n      \"photoUrl\": \"/uploads/handover-proof.jpg\"\n    }\n  ]\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('delivered with OTP + photo', () => pm.response.to.be.success);"] } }]
+        },
+        {
+          "name": "4.7 Complete → cash was taken at pickup",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{driverToken}}" }],
+            "url": "{{baseUrl}}/drivers/trips/{{tripId}}/complete"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.test('completed', () => pm.response.to.be.success);",
+            "pm.test('exactly 1 parcel delivered (B was refused)', () => pm.expect(d.packagesDelivered).to.eql(1));",
+            "pm.test('cash collected = A fee only (charged at pickup)', () => pm.expect(d.totalCashCollected).to.be.above(0));",
+            "console.log('Earnings:', JSON.stringify(d, null, 2));"
+          ] } }]
+        },
+        {
+          "name": "4.8 Sender view — A delivered with photo, B cancelled with reason",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{senderToken}}" }],
+            "url": "{{baseUrl}}/packages/{{packageAId}}"
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "const d = pm.response.json().data ?? pm.response.json();",
+            "pm.test('A is DELIVERED', () => pm.expect(d.status).to.eql('DELIVERED'));",
+            "pm.test('handover photo stored', () => pm.expect(d.deliveredPhotoUrl).to.be.a('string'));",
+            "console.log('A:', d.status, '| photo:', d.deliveredPhotoUrl);",
+            "// Check B too",
+            "pm.sendRequest({",
+            "  url: pm.collectionVariables.get('baseUrl') + '/packages/' + pm.collectionVariables.get('packageBId'),",
+            "  method: 'GET',",
+            "  header: { Authorization: 'Bearer ' + pm.collectionVariables.get('senderToken') },",
+            "}, (err, res) => {",
+            "  if (err) return console.log('B fetch failed', err);",
+            "  const b = res.json().data ?? res.json();",
+            "  console.log('B:', b.status, '| reason:', b.cancellationReason);",
+            "});"
+          ] } }]
+        }
+      ]
+    }
+  ]
+}

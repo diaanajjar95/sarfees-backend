@@ -2,12 +2,16 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { AuthGuard } from '@nestjs/passport';
 import {
   ApiBearerAuth,
@@ -28,6 +32,7 @@ import { AdminRole } from '../../shared/enums/admin-role.enum';
 import { DriverTripsService } from '../../driver-trips/driver-trips.service';
 import { SeedDriverTripDto } from '../../driver-trips/dto/seed-driver-trip.dto';
 import { DriverTrip } from '../../driver-trips/entities/driver-trip.entity';
+import { AdminCancelDto } from '../shared/dto/admin-cancel.dto';
 
 @ApiTags('Admin — Trips')
 @ApiBearerAuth()
@@ -83,5 +88,23 @@ export class AdminTripsController {
       status: trip.status,
       offerExpiresAt: trip.offerExpiresAt,
     };
+  }
+
+  @ApiOperation({
+    summary: 'Cancel a trip (ops full stop, reason required)',
+    description:
+      'Kills the trip outright: trip + linked passenger requests + packages + trip group all go CANCELLED, the driver is released with no penalty, and everyone affected is notified. Blocked once any passenger has been picked up.',
+  })
+  @ApiResponse({ status: 200, description: 'Trip cancelled' })
+  @Roles(AdminRole.SUPER_ADMIN, AdminRole.OPS_MANAGER)
+  @HttpCode(HttpStatus.OK)
+  @Post(':id/cancel')
+  cancel(
+    @Req() req: Request,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AdminCancelDto,
+  ): Promise<{ tripId: number; cancelledRequestIds: number[] }> {
+    const adminId = (req.user as { adminId: number }).adminId;
+    return this.driverTripsService.adminCancel(id, adminId, dto.reason);
   }
 }

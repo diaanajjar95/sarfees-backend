@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Post,
@@ -31,6 +33,15 @@ import { PaginationQueryDto } from '../shared/dto/pagination-query.dto';
 @UseGuards(AuthGuard('jwt'))
 export class PackagesController {
   constructor(private readonly packagesService: PackagesService) {}
+
+  @ApiOperation({
+    summary: 'Prohibited items list (§6.4) — show next to the legal attestation',
+  })
+  @ApiResponse({ status: 200, description: 'Bilingual prohibited items list' })
+  @Get('prohibited-items')
+  prohibitedItems() {
+    return this.packagesService.prohibitedItems();
+  }
 
   @ApiOperation({ summary: 'Estimate delivery fee based on package size and route' })
   @ApiResponse({ status: 200, description: 'Delivery fee estimated' })
@@ -80,6 +91,18 @@ export class PackagesController {
   @Get('active')
   getActivePackage(@Req() req: any) {
     return this.packagesService.getActivePackage(req.user.userId);
+  }
+
+  @ApiOperation({
+    summary: 'Cancel a delivery (sender, §6.7)',
+    description:
+      'Free before a driver is assigned; a cancellation fee applies after assignment (flag in the response). Blocked once the parcel is with the driver — the ops return flow takes over.',
+  })
+  @ApiResponse({ status: 200, description: 'Delivery cancelled' })
+  @HttpCode(HttpStatus.OK)
+  @Post(':id/cancel')
+  cancelDelivery(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
+    return this.packagesService.cancelDelivery(req.user.userId, id);
   }
 
   @ApiOperation({ summary: 'Get a specific package delivery by ID' })

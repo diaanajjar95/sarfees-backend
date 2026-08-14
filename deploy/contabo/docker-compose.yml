@@ -17,6 +17,7 @@ services:
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
+      TZ: Asia/Amman
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # Mount for pg_dump restore work — see 04-restore-db.sh
@@ -48,6 +49,9 @@ services:
       DB_NAME: ${DB_NAME}
       DB_SSL: "false"
       NODE_ENV: production
+      # Jordan time everywhere server-side: logs, naive-timestamp
+      # handling, date math. API JSON still serializes ISO-UTC (Z).
+      TZ: Asia/Amman
       PORT: "3000"
       # All other config comes from .env (JWT secrets, thresholds,
       # support contacts, app-init version fields, etc.)
@@ -60,19 +64,72 @@ services:
     networks:
       - sarfees-net
 
+  admin-portal:
+    build:
+      context: ../../admin-portal
+      dockerfile: Dockerfile
+    container_name: sarfees-admin-portal
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      # Server-side calls from the Next.js proxy routes hit the api
+      # container over the internal docker network. Browser calls come
+      # in via Caddy (same-origin /api/* → proxy routes → this env).
+      SARFEES_API_URL: http://api:3000
+      SESSION_SECRET: ${ADMIN_SESSION_SECRET}
+      # Cookie lifetimes mirror the JWT TTLs (24h access / 7d refresh)
+      # so a dead token never leaves a live cookie behind — expired
+      # sessions bounce cleanly to /login instead of erroring.
+      ADMIN_ACCESS_TTL_SECONDS: "86400"
+      ADMIN_REFRESH_TTL_SECONDS: "604800"
+      NODE_ENV: production
+      # We're serving the admin portal over plain HTTP on :8080 until
+      # DNS + Let's Encrypt are wired up. Browsers won't send Secure
+      # cookies over HTTP, so the session cookie would round-trip once
+      # and then be dropped — flip this to "true" the moment the site
+      # is behind HTTPS (named-domain Caddy block).
+      COOKIE_SECURE: "false"
+      # Server-rendered dates in the portal display in Jordan time.
+      TZ: Asia/Amman
+      PORT: "3001"
+    networks:
+      - sarfees-net
+
   caddy:
     image: caddy:2-alpine
     container_name: sarfees-caddy
     restart: unless-stopped
     depends_on:
       - api
+      - admin-portal
     ports:
       - "80:80"
       - "443:443"
+      - "8080:8080"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    networks:
+      - sarfees-net
+
+  # Self-hosted OSRM for real road distances. One-time data prep:
+  #   bash scripts/osrm-prepare-vps.sh
+  # (mirrors scripts/osrm-prepare.sh from the repo root — writes
+  # jordan-latest.osrm files into ./osrm-data). After the prep runs,
+  # start OSRM: `docker compose up -d osrm` and set MAP_PROVIDER=osrm
+  # + OSRM_BASE_URL=http://osrm:5000 in .env.
+  osrm:
+    image: osrm/osrm-backend:latest
+    container_name: sarfees-osrm
+    restart: unless-stopped
+    volumes:
+      - ./osrm-data:/data
+    command: >
+      osrm-routed --algorithm mld
+      --max-table-size 200
+      /data/jordan-latest.osrm
     networks:
       - sarfees-net
 

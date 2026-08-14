@@ -5,9 +5,13 @@ import {
   Route,
   Inbox,
   DollarSign,
+  Map as MapIcon,
   Megaphone,
+  Package,
+  Sparkles,
   HelpCircle,
   LogOut,
+  Boxes,
 } from 'lucide-react';
 import { getCurrentAdmin, logoutAction } from '@/lib/auth';
 
@@ -18,12 +22,16 @@ const NAV: {
   disabled?: boolean;
 }[] = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/map', label: 'Live map', icon: MapIcon },
   { href: '/passenger-requests', label: 'Passenger requests', icon: Inbox },
+  { href: '/groups', label: 'Trip groups', icon: Boxes },
+  { href: '/packages', label: 'Packages', icon: Package },
   { href: '/drivers', label: 'Drivers', icon: Users },
   { href: '/trips', label: 'Trips', icon: Route },
   { href: '/earnings', label: 'Earnings', icon: DollarSign },
   { href: '/announcements', label: 'Announcements', icon: Megaphone },
   { href: '/faq', label: 'FAQ', icon: HelpCircle },
+  { href: '/early-access', label: 'Early access', icon: Sparkles },
 ];
 
 export default async function DashboardLayout({

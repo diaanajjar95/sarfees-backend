@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { DriverStatus } from '../shared/enums/driver-status.enum';
 import { DriverSuspensionCategory } from '../shared/enums/driver-suspension-category.enum';
+import { VehicleClass } from '../shared/enums/vehicle-class.enum';
 
 @Entity('drivers')
 @Unique('UQ_driver_phone_country', ['countryCode', 'phoneNumber'])
@@ -64,6 +65,13 @@ export class Driver {
   @Column({ default: 4 })
   passengerCapacity: number;
 
+  @Column({
+    type: 'enum',
+    enum: VehicleClass,
+    nullable: true,
+  })
+  vehicleClass: VehicleClass | null;
+
   // ─── Reputation & Metrics ───────────────────────────────────
   @Column({ type: 'decimal', precision: 3, scale: 2, default: 5.0 })
   rating: number;
@@ -98,6 +106,15 @@ export class Driver {
 
   @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
   prefLocationLng: number;
+
+  /**
+   * Set when a going-home trip completes (master spec §9.6). Blocks
+   * `POST /drivers/activate` until this moment has passed. Reset to
+   * null by the going-home wake-up cron on the configured day
+   * boundary (defaults to local midnight).
+   */
+  @Column({ type: 'timestamptz', nullable: true })
+  goingHomeOfflineUntil: Date | null;
 
   // ─── Auth ───────────────────────────────────────────────────
   @Column({ default: false })

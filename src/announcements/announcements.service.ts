@@ -42,7 +42,7 @@ export class AnnouncementsService {
 
   async listAll(): Promise<AnnouncementResponseDto[]> {
     const rows = await this.repo.find({
-      order: { priority: 'DESC', createdAt: 'DESC' },
+      order: { id: 'DESC' },
     });
     return rows.map(AnnouncementResponseDto.from);
   }

@@ -190,14 +190,20 @@ export class DriverAuthService {
       language: driver.language,
     };
 
+    // 24h access / 7d refresh across every role (business decision,
+    // Jul 2026). Env-overridable without a redeploy.
+    const accessTtl =
+      this.configService.get<string>('JWT_DRIVER_ACCESS_EXPIRES_IN') ?? '24h';
+    const refreshTtl =
+      this.configService.get<string>('JWT_DRIVER_REFRESH_EXPIRES_IN') ?? '7d';
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
         secret: this.configService.get<string>('JWT_DRIVER_ACCESS_SECRET'),
-        expiresIn: '15m',
+        expiresIn: accessTtl as unknown as number,
       }),
       this.jwtService.signAsync(payload, {
         secret: this.configService.get<string>('JWT_DRIVER_REFRESH_SECRET'),
-        expiresIn: '7d',
+        expiresIn: refreshTtl as unknown as number,
       }),
     ]);
 

@@ -104,3 +104,114 @@ services:
         value: en
       - key: SUPPORTED_LANGUAGES
         value: en,ar
+
+      # ─── Map provider ────────────────────────────────────────────────
+      # Render can't self-host OSRM (single-container services), so
+      # Render deploys stick with `haversine`. Contabo runs OSRM in a
+      # sidecar — see deploy/contabo/docker-compose.yml. If you want
+      # Mapbox on Render, set MAP_PROVIDER=mapbox and paste a token
+      # into MAPBOX_ACCESS_TOKEN in the dashboard (do NOT commit).
+      - key: MAP_PROVIDER
+        value: haversine
+      - key: MAPBOX_ACCESS_TOKEN
+        sync: false
+      - key: MAPBOX_BASE_URL
+        value: https://api.mapbox.com
+      # OSRM_BASE_URL is unused on Render; kept here for parity with
+      # deploy/contabo/.env.example.
+      - key: OSRM_BASE_URL
+        sync: false
+      - key: MAP_CACHE_MAX_ENTRIES
+        value: "10000"
+      - key: MAP_CACHE_TTL_HOURS
+        value: "24"
+      - key: MAP_PROVIDER_FALLBACK
+        value: haversine
+
+      # ─── Matching engine thresholds (§14 of the master spec) ─────────
+      - key: MATCHING_MAX_GROUP_SIZE
+        value: "4"
+      - key: MATCHING_SERVICE_RADIUS_METERS
+        value: "5000"
+      - key: MATCHING_DETOUR_BOUND_PERCENT
+        value: "20"
+      - key: MATCHING_MIXED_PASSENGER_MIN
+        value: "2"
+      - key: MATCHING_MIXED_PASSENGER_MAX
+        value: "3"
+      - key: MATCHING_MIXED_PACKAGE_MIN
+        value: "3"
+      - key: MATCHING_MIXED_PACKAGE_MAX
+        value: "5"
+      - key: MATCHING_PACKAGES_ONLY_MIN
+        value: "7"
+      - key: MATCHING_PACKAGES_ONLY_MAX
+        value: "15"
+      - key: MATCHING_SLOT_S
+        value: "1"
+      - key: MATCHING_SLOT_M
+        value: "2"
+      - key: MATCHING_SLOT_L
+        value: "3"
+      - key: MATCHING_PASSENGER_WAIT_TOLERANCE_MIN
+        value: "30"
+      - key: MATCHING_PACKAGE_WAIT_TOLERANCE_MIN
+        value: "30"
+      - key: MATCHING_HANDLING_SEC_PER_PACKAGE
+        value: "300"
+      - key: MATCHING_OFFER_COUNTDOWN_SEC
+        value: "30"
+      - key: MATCHING_DRIVER_SEARCH_LEAD_MIN
+        value: "30"
+      - key: MATCHING_NOW_WINDOW_MIN_MIN
+        value: "15"
+      - key: MATCHING_NOW_WINDOW_MAX_MIN
+        value: "30"
+      - key: MATCHING_SWEEP_INTERVAL_SEC
+        value: "30"
+      - key: MATCHING_URGENT_EARLY_BROADCAST_DECLINES
+        value: "3"
+      - key: MATCHING_BROADCAST_TRIGGER_DECLINE_COUNT
+        value: "5"
+      - key: MATCHING_DECLINE_PENALTY_BASE
+        value: "10"
+      - key: MATCHING_DECLINE_PENALTY_DECAY_DAYS
+        value: "7"
+      - key: MATCHING_DRIVER_CANCEL_PENALTY
+        value: "15"
+      - key: MATCHING_RECIPIENT_GRACE_MIN
+        value: "10"
+      - key: MATCHING_SENDER_NOSHOW_GRACE_MIN
+        value: "7"
+      - key: MATCHING_ASSIGNED_DRIVER_OFFLINE_GRACE_MIN
+        value: "5"
+      - key: MATCHING_CANCELLATION_FEE_JOD_CENTS
+        value: "200"
+      - key: MATCHING_NO_SHOW_FEE_JOD_CENTS
+        value: "300"
+      - key: MATCHING_RETURN_REDELIVERY_FEE_JOD_CENTS
+        value: "500"
+      - key: MATCHING_FULL_CAR_DISCOUNT_PERCENT
+        value: "10"
+      - key: MATCHING_GOING_HOME_DAY_BOUNDARY_HOUR
+        value: "0"
+
+      # ─── Vehicle-class capacity defaults (seeded to vehicle_class_capacity) ─
+      - key: VEHICLE_CAP_SEDAN_TRUNK_SLOTS
+        value: "6"
+      - key: VEHICLE_CAP_SEDAN_WEIGHT_KG
+        value: "50"
+      - key: VEHICLE_CAP_SEDAN_SEAT_SLOT
+        value: "2"
+      - key: VEHICLE_CAP_SUV_TRUNK_SLOTS
+        value: "9"
+      - key: VEHICLE_CAP_SUV_WEIGHT_KG
+        value: "90"
+      - key: VEHICLE_CAP_SUV_SEAT_SLOT
+        value: "3"
+      - key: VEHICLE_CAP_PICKUP_TRUNK_SLOTS
+        value: "15"
+      - key: VEHICLE_CAP_PICKUP_WEIGHT_KG
+        value: "200"
+      - key: VEHICLE_CAP_PICKUP_SEAT_SLOT
+        value: "3"

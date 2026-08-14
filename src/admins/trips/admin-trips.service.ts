@@ -41,7 +41,7 @@ export class AdminTripsService {
       .createQueryBuilder('t')
       .leftJoin('t.driver', 'd')
       .addSelect(['d.id', 'd.name'])
-      .orderBy('t.departureTime', 'DESC');
+      .orderBy('t.id', 'DESC');
 
     if (query.status) qb.andWhere('t.status = :s', { s: query.status });
     if (query.type) qb.andWhere('t.type = :tp', { tp: query.type });
@@ -125,7 +125,7 @@ export class AdminTripsService {
 
     const declineRows = await this.declineLogRepo.find({
       where: { trip: { id: tripId } },
-      order: { declinedAt: 'DESC' },
+      order: { id: 'DESC' },
     });
 
     const lifecycle = this.buildLifecycle(trip, stops);
