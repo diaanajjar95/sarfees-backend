@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation';
 import { ChevronLeft, Pencil } from 'lucide-react';
 import { ApiError, apiFetch } from '@/lib/api';
 import type { AdminDriverDetail } from '@/lib/types';
-import { reinstateDriverAction, suspendDriverAction } from '../actions';
+import { reinstateDriverAction } from '../actions';
+import SuspendWithReason from '../../_components/SuspendWithReason';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -59,16 +60,7 @@ export default async function DriverDetailPage({ params }: PageProps) {
             <Pencil size={14} /> Edit
           </Link>
           {!isSuspended ? (
-            <form
-              action={async () => {
-                'use server';
-                await suspendDriverAction(driver.id);
-              }}
-            >
-              <button type="submit" className="btn-danger" disabled={onTrip}>
-                {onTrip ? 'Cannot suspend (on trip)' : 'Suspend'}
-              </button>
-            </form>
+            <SuspendWithReason driverId={driver.id} disabled={onTrip} />
           ) : (
             <form
               action={async () => {

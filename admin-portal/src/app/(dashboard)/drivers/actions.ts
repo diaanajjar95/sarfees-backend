@@ -88,12 +88,41 @@ export async function updateDriverAction(
   redirect(`/drivers/${driverId}`);
 }
 
-export async function suspendDriverAction(driverId: number): Promise<void> {
-  await apiFetch<DriverProfile>(`/admin/drivers/${driverId}/suspend`, {
-    method: 'POST',
-  });
+const SUSPENSION_CATEGORIES = new Set([
+  'documents',
+  'rating',
+  'payment',
+  'violation',
+]);
+
+export async function suspendDriverAction(
+  _prev: { ok: boolean; error?: string } | null,
+  formData: FormData,
+): Promise<{ ok: boolean; error?: string }> {
+  const driverId = Number(formData.get('driverId'));
+  const category = String(formData.get('category') ?? '');
+  const reason = String(formData.get('reason') ?? '').trim();
+
+  if (!Number.isFinite(driverId)) return { ok: false, error: 'Bad driver id.' };
+  if (!SUSPENSION_CATEGORIES.has(category))
+    return { ok: false, error: 'Pick a suspension category.' };
+  if (!reason)
+    return { ok: false, error: 'A reason is required — the driver sees it.' };
+
+  try {
+    await apiFetch<DriverProfile>(`/admin/drivers/${driverId}/suspend`, {
+      method: 'POST',
+      body: { category, reason },
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'Suspension failed.',
+    };
+  }
   revalidatePath(`/drivers/${driverId}`);
   revalidatePath('/drivers');
+  return { ok: true };
 }
 
 export async function reinstateDriverAction(driverId: number): Promise<void> {
