@@ -147,11 +147,13 @@ export class RatingsService {
         passenger: { id: userId },
       },
     });
+    // Field is named `comment` in responses — the global envelope
+    // interceptor lifts any top-level `message` key into the envelope.
     return rating
       ? {
           level: rating.level,
           value: rating.value,
-          message: rating.message,
+          comment: rating.message,
           createdAt: rating.createdAt,
         }
       : null;
