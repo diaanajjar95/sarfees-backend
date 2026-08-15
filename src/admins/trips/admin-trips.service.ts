@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { I18nContext } from 'nestjs-i18n';
-import { DriverTrip } from '../../driver-trips/entities/driver-trip.entity';
+import { tripCommission, DriverTrip } from '../../driver-trips/entities/driver-trip.entity';
 import { DriverTripStop } from '../../driver-trips/entities/driver-trip-stop.entity';
 import { DriverTripDeclineLog } from '../../driver-trips/entities/driver-trip-decline-log.entity';
 import { DriverTripStatus } from '../../shared/enums/driver-trip-status.enum';
@@ -149,8 +149,9 @@ export class AdminTripsService {
 
     const cashCollected = Number(trip.totalCashCollected);
     const commissionRate = Number(trip.commissionRate);
+    const commissionAmountStored = tripCommission(trip);
     const commissionAmount =
-      Math.round(cashCollected * commissionRate * 100) / 100;
+      commissionAmountStored;
     const netEarnings =
       trip.netEarnings != null
         ? Number(trip.netEarnings)

@@ -7,7 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Between, MoreThan, Repository } from 'typeorm';
 import { Driver } from '../../drivers/driver.entity';
 import { DriverStatus } from '../../shared/enums/driver-status.enum';
-import { DriverTrip } from '../../driver-trips/entities/driver-trip.entity';
+import { tripCommission, DriverTrip } from '../../driver-trips/entities/driver-trip.entity';
 import { DriverTripStatus } from '../../shared/enums/driver-trip-status.enum';
 import { EarningsPeriod } from '../../drivers/dto/earnings.dto';
 import {
@@ -50,8 +50,7 @@ export class AdminEarningsService {
 
     for (const t of trips) {
       const c = Number(t.totalCashCollected);
-      const r = Number(t.commissionRate);
-      const com = Math.round(c * r * 100) / 100;
+      const com = tripCommission(t);
       cash += c;
       commission += com;
       net += c - com;
