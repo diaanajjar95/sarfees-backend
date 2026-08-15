@@ -1193,15 +1193,6 @@ export class DriverTripsService {
         ? Math.round((now.getTime() - trip.startedAt.getTime()) / 60000)
         : 0;
 
-      // Emit earnings notification for the driver's notifications screen
-      await this.notifications.emit({
-        driverId,
-        type: DriverNotificationType.EARNINGS_RECORDED,
-        title: 'Trip earnings recorded',
-        body: `Net earnings of ${netEarnings.toFixed(2)} JD have been recorded for ${trip.originCity} → ${trip.destinationCity}.`,
-        payload: { tripId: trip.id, netEarnings },
-      });
-
       return {
         tripId: trip.id,
         route: `${trip.originCity} → ${trip.destinationCity}`,
@@ -1218,8 +1209,20 @@ export class DriverTripsService {
       };
     });
 
-    // Post-commit: warn the driver if the deduction left the wallet
-    // under the threshold (reads committed state; cooldown-deduped).
+    // Post-commit: notifications only after the money transaction has
+    // committed. An emit inside the transaction inserts a row whose
+    // driver FK needs a key-share lock on the driver row — which our
+    // open transaction blocks, deadlocking complete() against itself.
+    await this.notifications.emit({
+      driverId,
+      type: DriverNotificationType.EARNINGS_RECORDED,
+      title: 'Trip earnings recorded',
+      body: `Net earnings of ${completion.netEarnings.toFixed(2)} JD have been recorded for ${completion.route}.`,
+      payload: { tripId: completion.tripId, netEarnings: completion.netEarnings },
+    });
+
+    // Warn the driver if the deduction left the wallet under the
+    // threshold (reads committed state; cooldown-deduped).
     const walletCfg = await this.walletConfig.getConfig();
     if (completion.walletBalance < Number(walletCfg.lowBalanceThresholdJod)) {
       const freshDriver = await this.driversRepo.findOne({
