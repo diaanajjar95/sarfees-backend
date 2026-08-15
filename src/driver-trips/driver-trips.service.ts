@@ -67,9 +67,11 @@ import { PassengerNotificationsService } from '../notifications/passenger/passen
 import { PassengerNotificationType } from '../shared/enums/passenger-notification-type.enum';
 import { AssignmentService } from '../assignment/assignment.service';
 import { Inject, forwardRef } from '@nestjs/common';
+import { WalletsService } from '../wallets/wallets.service';
+import { WalletConfigService } from '../wallets/wallet-config.service';
+import { WalletTransactionType } from '../shared/enums/wallet.enum';
 
 const DEFAULT_OFFER_SECONDS = 45;
-const DEFAULT_COMMISSION_RATE = 0.15;
 const ESTIMATED_MINUTES_PER_STOP = 35;
 
 /**
@@ -113,6 +115,8 @@ export class DriverTripsService {
     private readonly passengerNotifications: PassengerNotificationsService,
     @Inject(forwardRef(() => AssignmentService))
     private readonly assignmentService: AssignmentService,
+    private readonly walletsService: WalletsService,
+    private readonly walletConfig: WalletConfigService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════
@@ -1081,17 +1085,21 @@ export class DriverTripsService {
       );
     }
 
-    return this.dataSource.transaction(async (mgr) => {
+    const completion = await this.dataSource.transaction(async (mgr) => {
       const now = new Date();
       const totalCashCollected = Number(trip.totalCashCollected);
       const commissionRate = Number(trip.commissionRate);
+      // Wallet model: commission is charged on the trip's TOTAL price
+      // (what was booked), not on what the driver managed to collect.
       const commissionAmount =
-        Math.round(totalCashCollected * commissionRate * 100) / 100;
+        Math.round(Number(trip.totalCashExpected) * commissionRate * 100) /
+        100;
       const netEarnings =
         Math.round((totalCashCollected - commissionAmount) * 100) / 100;
 
       trip.status = DriverTripStatus.COMPLETED;
       trip.completedAt = now;
+      trip.commissionAmount = commissionAmount;
       trip.netEarnings = netEarnings;
       await mgr.save(trip);
 
@@ -1126,8 +1134,10 @@ export class DriverTripsService {
 
         driver.status = DriverStatus.INACTIVE;
         driver.totalTrips = (driver.totalTrips ?? 0) + 1;
-        driver.outstandingBalance =
-          Number(driver.outstandingBalance) + commissionAmount;
+        // Prepaid wallet model: the commission comes OUT of the wallet
+        // (ledgered, row-locked) instead of piling onto the legacy
+        // outstandingBalance debt. May push the wallet negative — the
+        // matcher then withholds offers until the driver tops up.
         // Clear session preferences on auto-deactivate
         driver.prefDestinationCity = null as unknown as string;
         driver.prefTripTypes = null as unknown as string[];
@@ -1137,6 +1147,24 @@ export class DriverTripsService {
         driver.prefLocationLat = null as unknown as number;
         driver.prefLocationLng = null as unknown as number;
         await mgr.save(driver);
+      }
+
+      // Deduct the commission from the prepaid wallet — row-locked,
+      // ledgered, inside this same transaction. Negative balances are
+      // allowed here (the trip already ran); the matcher simply stops
+      // offering until the driver tops up.
+      let walletBalanceAfter = 0;
+      if (commissionAmount > 0) {
+        const walletResult = await this.walletsService.applyTransaction(mgr, {
+          driverId,
+          type: WalletTransactionType.COMMISSION,
+          amount: -commissionAmount,
+          driverTripId: trip.id,
+          note: `Commission ${(commissionRate * 100).toFixed(1)}% of ${Number(trip.totalCashExpected).toFixed(2)} JD trip total`,
+        });
+        walletBalanceAfter = walletResult.newBalance;
+      } else if (driver) {
+        walletBalanceAfter = Number(driver.walletBalance);
       }
 
       const passengersServed = stops.reduce(
@@ -1165,15 +1193,6 @@ export class DriverTripsService {
         ? Math.round((now.getTime() - trip.startedAt.getTime()) / 60000)
         : 0;
 
-      // Emit earnings notification for the driver's notifications screen
-      await this.notifications.emit({
-        driverId,
-        type: DriverNotificationType.EARNINGS_RECORDED,
-        title: 'Trip earnings recorded',
-        body: `Net earnings of ${netEarnings.toFixed(2)} JD have been recorded for ${trip.originCity} → ${trip.destinationCity}.`,
-        payload: { tripId: trip.id, netEarnings },
-      });
-
       return {
         tripId: trip.id,
         route: `${trip.originCity} → ${trip.destinationCity}`,
@@ -1183,10 +1202,38 @@ export class DriverTripsService {
         totalCashCollected,
         commissionRate,
         commissionAmount,
+        commissionDeducted: commissionAmount,
         netEarnings,
+        walletBalance: walletBalanceAfter,
         outstandingBalance: driver ? Number(driver.outstandingBalance) : 0,
       };
     });
+
+    // Post-commit: notifications only after the money transaction has
+    // committed. An emit inside the transaction inserts a row whose
+    // driver FK needs a key-share lock on the driver row — which our
+    // open transaction blocks, deadlocking complete() against itself.
+    await this.notifications.emit({
+      driverId,
+      type: DriverNotificationType.EARNINGS_RECORDED,
+      title: 'Trip earnings recorded',
+      body: `Net earnings of ${completion.netEarnings.toFixed(2)} JD have been recorded for ${completion.route}.`,
+      payload: { tripId: completion.tripId, netEarnings: completion.netEarnings },
+    });
+
+    // Warn the driver if the deduction left the wallet under the
+    // threshold (reads committed state; cooldown-deduped).
+    const walletCfg = await this.walletConfig.getConfig();
+    if (completion.walletBalance < Number(walletCfg.lowBalanceThresholdJod)) {
+      const freshDriver = await this.driversRepo.findOne({
+        where: { id: driverId },
+      });
+      if (freshDriver) {
+        await this.walletsService.maybeNotifyLowBalance(freshDriver);
+      }
+    }
+
+    return completion;
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -1475,6 +1522,10 @@ export class DriverTripsService {
     });
     if (!driver) throw new NotFoundException('Driver not found');
 
+    // Snapshot the platform commission % onto this trip. Editing the
+    // wallet config later never rewrites already-created trips.
+    const commissionFraction = await this.walletConfig.commissionFraction();
+
     if (
       dto.type === DriverTripType.WOMEN_ONLY &&
       driver.gender !== 'female' &&
@@ -1534,7 +1585,7 @@ export class DriverTripsService {
         currentStopIndex: 0,
         totalCashExpected,
         totalCashCollected: 0,
-        commissionRate: dto.commissionRate ?? DEFAULT_COMMISSION_RATE,
+        commissionRate: dto.commissionRate ?? commissionFraction,
         offeredAt: now,
         offerExpiresAt: new Date(now.getTime() + offerSeconds * 1000),
       });

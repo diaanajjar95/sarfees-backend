@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PassportModule } from '@nestjs/passport';
+import { WalletsModule } from '../wallets/wallets.module';
 import { Driver } from './driver.entity';
 import { DriversService } from './drivers.service';
 import { EarningsService } from './earnings.service';
@@ -29,6 +30,7 @@ import { AnnouncementsModule } from '../announcements/announcements.module';
       DriverDocument,
     ]),
     PassportModule,
+    WalletsModule,
     AnnouncementsModule,
   ],
   controllers: [DriversController],

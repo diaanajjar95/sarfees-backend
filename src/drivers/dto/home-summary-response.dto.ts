@@ -270,6 +270,21 @@ export class CurrentTripDto {
  * sessionStartedAt) so the mobile app doesn't have to compose two
  * calls every time it refreshes the Home tab.
  */
+export class WalletSummaryDto {
+  @ApiProperty({ example: 12.5, description: 'Prepaid wallet balance (JD)' })
+  balance: number;
+
+  @ApiProperty({ example: 5 })
+  lowBalanceThreshold: number;
+
+  @ApiProperty({
+    description:
+      'True when the balance is under the platform threshold — the app ' +
+      'should surface the "top up to keep receiving trips" warning.',
+  })
+  isLow: boolean;
+}
+
 export class HomeSummaryResponseDto {
   // ─── Live session state ────────────────────────────────────
   @ApiProperty({
@@ -323,6 +338,15 @@ export class HomeSummaryResponseDto {
   lastTrip: LastTripSummaryDto | null;
 
   @ApiProperty({ example: 0 }) outstandingBalance: number;
+
+  @ApiProperty({
+    type: WalletSummaryDto,
+    description:
+      'Prepaid wallet the platform commission is deducted from. When ' +
+      'the balance cannot cover a trip\'s commission the driver gets no ' +
+      'offers until they top up at a card seller.',
+  })
+  wallet: WalletSummaryDto;
 
   @ApiProperty({
     type: [AnnouncementResponseDto],

@@ -52,6 +52,16 @@ export class DriverTrip {
   @Column({ type: 'decimal', precision: 4, scale: 3, default: 0.15 })
   commissionRate: number;
 
+  /**
+   * Commission actually deducted from the driver's wallet at
+   * completion = round(totalCashExpected × commissionRate). Null on
+   * trips completed before the wallet shipped — readers fall back to
+   * recomputing from collected cash for those legacy rows (see
+   * tripCommission helper below).
+   */
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  commissionAmount: number | null;
+
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   netEarnings: number;
 
@@ -100,4 +110,21 @@ export class DriverTrip {
 
   @UpdateDateColumn()
   updatedAt: Date;
+}
+
+/**
+ * Commission for a completed trip: the stored wallet deduction when
+ * present, else the legacy recomputation (collected × rate) for trips
+ * completed before the prepaid wallet shipped.
+ */
+export function tripCommission(t: {
+  commissionAmount?: number | null;
+  totalCashCollected: number;
+  commissionRate: number;
+}): number {
+  if (t.commissionAmount != null) return Number(t.commissionAmount);
+  return (
+    Math.round(Number(t.totalCashCollected) * Number(t.commissionRate) * 100) /
+    100
+  );
 }

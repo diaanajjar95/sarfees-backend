@@ -128,6 +128,15 @@ services:
       - key: MAP_PROVIDER_FALLBACK
         value: haversine
 
+
+      # --- Driver wallet (prepaid commission) -------------------------
+      - key: WALLET_COMMISSION_PERCENT
+        value: "15"
+      - key: WALLET_LOW_BALANCE_THRESHOLD_JOD
+        value: "5"
+      - key: WALLET_LOW_BALANCE_NOTIFY_COOLDOWN_HOURS
+        value: "24"
+
       # ─── Matching engine thresholds (§14 of the master spec) ─────────
       - key: MATCHING_MAX_GROUP_SIZE
         value: "4"

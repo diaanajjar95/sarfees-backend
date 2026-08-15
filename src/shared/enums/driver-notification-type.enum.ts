@@ -10,6 +10,12 @@ export enum DriverNotificationType {
   OFFER_RECEIVED = 'offer_received',
   /** Broadcast lost — another driver accepted first (§9.4 race rule). */
   OFFER_NO_LONGER_AVAILABLE = 'offer_no_longer_available',
+  /**
+   * Wallet balance below the platform threshold (or too low for a
+   * specific trip's commission) — the driver stops receiving offers
+   * until they top up. Deduped via Driver.walletLowBalanceNotifiedAt.
+   */
+  WALLET_LOW_BALANCE = 'wallet_low_balance',
 }
 
 export enum DriverNotificationCategory {
@@ -37,4 +43,6 @@ export const NOTIFICATION_CATEGORY: Record<
   [DriverNotificationType.OFFER_RECEIVED]: DriverNotificationCategory.TRIPS,
   [DriverNotificationType.OFFER_NO_LONGER_AVAILABLE]:
     DriverNotificationCategory.TRIPS,
+  [DriverNotificationType.WALLET_LOW_BALANCE]:
+    DriverNotificationCategory.EARNINGS,
 };
