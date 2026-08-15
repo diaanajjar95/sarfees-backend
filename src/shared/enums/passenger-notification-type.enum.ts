@@ -28,6 +28,8 @@ export enum PassengerNotificationType {
   TRIP_DELAY_ESCALATION = 'trip_delay_escalation',
 
   // Catch-all
+  /** Trip done — nudge the passenger to rate their driver (optional). */
+  RATE_YOUR_TRIP = 'rate_your_trip',
   SYSTEM_ANNOUNCEMENT = 'system_announcement',
 }
 
@@ -67,6 +69,8 @@ export const PASSENGER_NOTIFICATION_CATEGORY: Record<
   [PassengerNotificationType.WOMEN_ONLY_MALE_DRIVER_FALLBACK]:
     PassengerNotificationCategory.TRIPS,
   [PassengerNotificationType.TRIP_DELAY_ESCALATION]:
+    PassengerNotificationCategory.TRIPS,
+  [PassengerNotificationType.RATE_YOUR_TRIP]:
     PassengerNotificationCategory.TRIPS,
   [PassengerNotificationType.SYSTEM_ANNOUNCEMENT]:
     PassengerNotificationCategory.SYSTEM,

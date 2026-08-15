@@ -1221,6 +1221,28 @@ export class DriverTripsService {
       payload: { tripId: completion.tripId, netEarnings: completion.netEarnings },
     });
 
+    // Nudge each served passenger to rate their driver (optional —
+    // per product the rating is never mandatory).
+    const servedRequests = await this.tripRequestsRepo
+      .createQueryBuilder('r')
+      .innerJoinAndSelect('r.passenger', 'p')
+      .innerJoin('r.tripGroup', 'g')
+      .where('g."driverTripId" = :tripId', { tripId: completion.tripId })
+      .andWhere('r.status = :done', { done: TripStatus.COMPLETED })
+      .getMany();
+    for (const r of servedRequests) {
+      if (!r.passenger) continue;
+      await this.passengerNotifications.emit({
+        userId: r.passenger.id,
+        type: PassengerNotificationType.RATE_YOUR_TRIP,
+        titleEn: 'How was your trip?',
+        titleAr: 'كيف كانت رحلتك؟',
+        bodyEn: 'Rate your driver — it takes a second and helps keep quality high.',
+        bodyAr: 'قيّم سائقك — تستغرق لحظة وتساعدنا في الحفاظ على الجودة.',
+        payload: { tripRequestId: r.id, tripId: completion.tripId },
+      });
+    }
+
     // Warn the driver if the deduction left the wallet under the
     // threshold (reads committed state; cooldown-deduped).
     const walletCfg = await this.walletConfig.getConfig();

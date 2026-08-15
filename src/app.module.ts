@@ -27,6 +27,7 @@ import { AdminTripGroupsModule } from './admins/trip-groups/admin-trip-groups.mo
 import { AdminPackagesModule } from './admins/packages/admin-packages.module';
 import { EarlyAccessModule } from './early-access/early-access.module';
 import { WalletsModule } from './wallets/wallets.module';
+import { RatingsModule } from './ratings/ratings.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import { FaqModule } from './faq/faq.module';
 import { MapModule } from './shared/map/map.module';
@@ -100,6 +101,7 @@ import * as path from 'path';
     AdminPackagesModule,
     EarlyAccessModule,
     WalletsModule,
+    RatingsModule,
     AnnouncementsModule,
     FaqModule,
     MapModule,
