@@ -9,6 +9,7 @@ import {
   Megaphone,
   Package,
   Sparkles,
+  BellRing,
   HelpCircle,
   LogOut,
   Boxes,
@@ -32,6 +33,7 @@ const NAV: {
   { href: '/announcements', label: 'Announcements', icon: Megaphone },
   { href: '/faq', label: 'FAQ', icon: HelpCircle },
   { href: '/early-access', label: 'Early access', icon: Sparkles },
+  { href: '/notifications', label: 'Notifications', icon: BellRing },
 ];
 
 export default async function DashboardLayout({

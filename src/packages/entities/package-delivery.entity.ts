@@ -109,6 +109,14 @@ export class PackageDelivery {
   @Column({ type: 'int', nullable: true })
   cancelledByAdminId: number | null;
 
+  /**
+   * Anonymous tracking handle for the RECEIVER (not an app user).
+   * Shared over WhatsApp as /track/<token> — status timeline only,
+   * no map, no auth. Null on legacy rows created before this shipped.
+   */
+  @Column({ type: 'varchar', length: 40, nullable: true, unique: true })
+  trackingToken: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

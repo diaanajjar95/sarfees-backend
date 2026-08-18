@@ -70,6 +70,7 @@ import { Inject, forwardRef } from '@nestjs/common';
 import { WalletsService } from '../wallets/wallets.service';
 import { WalletConfigService } from '../wallets/wallet-config.service';
 import { WalletTransactionType } from '../shared/enums/wallet.enum';
+import { PackageReceiverNotifier } from '../push/package-receiver-notifier.service';
 
 const DEFAULT_OFFER_SECONDS = 45;
 const ESTIMATED_MINUTES_PER_STOP = 35;
@@ -117,6 +118,7 @@ export class DriverTripsService {
     private readonly assignmentService: AssignmentService,
     private readonly walletsService: WalletsService,
     private readonly walletConfig: WalletConfigService,
+    private readonly receiverNotifier: PackageReceiverNotifier,
   ) {}
 
   // ═════════════════════════════════════════════════════════════
@@ -242,6 +244,9 @@ export class DriverTripsService {
           .execute();
       }
     });
+
+    // Receiver WhatsApp (anonymous tracking link) — driver assigned.
+    void this.receiverNotifier.notifyByPackageIds(packageIds, 'assigned');
 
     // Build the manifest AFTER the transaction commits. buildManifest
     // reads through the default connection, which cannot see this
@@ -834,6 +839,11 @@ export class DriverTripsService {
       bodyAr: 'استلم السائق طردك وبدأ رحلة التوصيل.',
       payload: { tripId: trip.id, stopId: stop.id },
     });
+    // Receiver WhatsApp — package on the way.
+    void this.receiverNotifier.notifyByPackageIds(
+      result.collectedPackageIds,
+      'picked_up',
+    );
     const notFoundSenderIds = await this.senderUserIdsForPackages(
       result.notFoundPackageIds,
     );
@@ -1040,6 +1050,11 @@ export class DriverTripsService {
       bodyAr: 'تم تسليم طردك إلى المستلم.',
       payload: { tripId: trip.id, stopId: stop.id },
     });
+    // Receiver WhatsApp — delivered confirmation.
+    void this.receiverNotifier.notifyByPackageIds(
+      result.deliveredPackageIds,
+      'delivered',
+    );
     const failedSenderIds = await this.senderUserIdsForPackages(
       result.failedPackageIds,
     );
