@@ -32,12 +32,17 @@ wraps payloads as `{ "code", "message", "data" }`.
 | `status` | Meaning | Non-null conditional block |
 |---|---|---|
 | `inactive` | Off shift. Not considered by the matcher. | `lastSession` (if they had one) |
-| `active` | On shift, matchable. May carry a live offer. | `pendingOffer` (only while an offer is live) |
-| `on_trip` | Executing an accepted trip. | `currentTrip` |
+| `active` | On shift, matchable. May carry a live offer. | `pendingOffer` (only while an offer is live); `currentTrip` (once a trip is accepted, `currentTrip.status: "accepted"`) |
+| `on_trip` | Executing a started trip. | `currentTrip` (`currentTrip.status: "in_progress"`) |
 | `suspended` | Blocked by ops. Cannot activate. | `suspensionInfo` |
 
-At most one of `currentTrip` / `pendingOffer` / `lastSession` /
-`suspensionInfo` is non-null at a time. Everything else
+`currentTrip` is present whenever the driver has an accepted or
+in-progress trip — including while `status` is still `active` after
+accepting but before pressing Start. Use `currentTrip.status`
+(`accepted` vs `in_progress`) to pick between an "Upcoming trip" card
+and the "Resume Trip" card. `lastSession` / `suspensionInfo` remain
+exclusive to their driver status; `pendingOffer` and `currentTrip`
+can in principle both be non-null on an `active` driver. Everything else
 (`todayEarnings`, `tripsCompletedToday`, `commissionPercentageToday`,
 `lastTrip`, `outstandingBalance`, `announcements`) is always present.
 
