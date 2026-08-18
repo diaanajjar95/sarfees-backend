@@ -220,6 +220,17 @@ export class DriverTripsService {
       trip.acceptedAt = now;
       await mgr.save(trip);
 
+      // Accepting commits the driver: they go ON_TRIP immediately (not
+      // at start), so the matcher stops offering them other groups and
+      // ops sees them as booked. Every accepted-trip exit (start→
+      // complete, driver cancel zone 1, admin cancel, all-passengers-
+      // cancelled) restores ACTIVE.
+      await mgr.update(
+        Driver,
+        { id: driverId },
+        { status: DriverStatus.ON_TRIP },
+      );
+
       // Sync passenger TripRequests: assign driver, transition status
       if (tripRequestIds.length) {
         await mgr

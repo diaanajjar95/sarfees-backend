@@ -351,10 +351,19 @@ export class AssignmentService {
         (dt.status === DriverTripStatus.ACCEPTED ||
           dt.status === DriverTripStatus.OFFERED)
       ) {
+        const wasAccepted = dt.status === DriverTripStatus.ACCEPTED;
         dt.status = DriverTripStatus.CANCELLED;
         dt.cancelledAt = new Date();
         dt.cancellationReason = 'all_passengers_cancelled';
         await this.driverTripsRepo.save(dt);
+        // An accepted driver was flipped ON_TRIP at accept — release
+        // them back to ACTIVE so they can receive offers again.
+        if (wasAccepted) {
+          await this.driversRepo.update(
+            { id: group.assignedDriver.id, status: DriverStatus.ON_TRIP },
+            { status: DriverStatus.ACTIVE },
+          );
+        }
       }
       await this.driverNotifications.emit({
         driverId: group.assignedDriver.id,

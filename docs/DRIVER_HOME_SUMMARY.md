@@ -33,7 +33,7 @@ wraps payloads as `{ "code", "message", "data" }`.
 |---|---|---|
 | `inactive` | Off shift. Not considered by the matcher. | `lastSession` (if they had one) |
 | `active` | On shift, matchable. May carry a live offer. | `pendingOffer` (only while an offer is live) |
-| `on_trip` | Executing an accepted trip. | `currentTrip` |
+| `on_trip` | Booked on a trip — set at ACCEPT, before Start. | `currentTrip` (`status`: `accepted` \| `in_progress`) |
 | `suspended` | Blocked by ops. Cannot activate. | `suspensionInfo` |
 
 At most one of `currentTrip` / `pendingOffer` / `lastSession` /
