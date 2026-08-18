@@ -1,20 +1,28 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
 
 @theme {
-  /* ─── Sarfees brand tokens (mirrors driver app spec) ───────── */
-  --color-sarfees-gold: #FABE2C;
-  --color-sarfees-gold-dark: #F5A623;
+  /* ─── Sarfees design-system tokens (light theme, mirrors the UX
+     bundle's colors_and_type.css). Variable NAMES are kept from the
+     original dark theme so every page rethemes without edits. ───── */
+  --color-sarfees-gold: #F5A623;        /* accent text/links on white */
+  --color-sarfees-gold-dark: #E09612;
   --color-sarfees-gold-light: #FDD97E;
-  --color-sarfees-dark-1: #0F0F12;
-  --color-sarfees-dark-2: #181820;
-  --color-sarfees-dark-3: #22222E;
-  --color-sarfees-text: #FFFFFF;
-  --color-sarfees-muted: #9090A0;
-  --color-sarfees-soft: #38383F;
-  --color-sarfees-border: rgba(255, 255, 255, 0.10);
+  --color-sarfees-gold-bright: #FABE2C; /* filled buttons / brand tile */
+  --color-sarfees-gold-surface: #FFF8E7;
+  --color-sarfees-dark-1: #F9F9F9;      /* page background */
+  --color-sarfees-dark-2: #FFFFFF;      /* card surface */
+  --color-sarfees-dark-3: #F2F2F2;      /* elevated / input surface */
+  --color-sarfees-text: #1A1A1A;
+  --color-sarfees-muted: #4A4A4A;       /* secondary copy */
+  --color-sarfees-soft: #9E9E9E;        /* hints, table headers */
+  --color-sarfees-border: #E4E4E4;
   --color-sarfees-success: #2E7D32;
+  --color-sarfees-success-light: #E8F5E9;
   --color-sarfees-warning: #F57C00;
+  --color-sarfees-warning-light: #FFF3E0;
   --color-sarfees-error: #C62828;
+  --color-sarfees-error-light: #FFEBEE;
   --color-sarfees-blue: #2F80ED;
 
   --font-sans: 'Nunito', ui-sans-serif, system-ui, sans-serif;
@@ -22,7 +30,7 @@
 }
 
 html {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 body {
@@ -36,7 +44,8 @@ body {
 .surface-card {
   background-color: var(--color-sarfees-dark-2);
   border: 1px solid var(--color-sarfees-border);
-  border-radius: 12px;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(19, 19, 22, 0.04);
 }
 
 .surface-elevated {
@@ -46,41 +55,44 @@ body {
 }
 
 .btn-primary {
-  background-color: var(--color-sarfees-gold);
+  background-color: var(--color-sarfees-gold-bright);
   color: #1A1A1A;
   font-weight: 800;
   border-radius: 10px;
   padding: 10px 18px;
   transition: background-color 150ms ease;
 }
-.btn-primary:hover { background-color: var(--color-sarfees-gold-dark); }
+.btn-primary:hover { background-color: var(--color-sarfees-gold); }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-secondary {
-  background-color: transparent;
-  color: var(--color-sarfees-gold);
-  border: 1.5px solid rgba(250, 190, 44, 0.5);
+  background-color: var(--color-sarfees-dark-2);
+  color: var(--color-sarfees-muted);
+  border: 1.5px solid var(--color-sarfees-border);
   font-weight: 700;
   border-radius: 10px;
   padding: 10px 18px;
-  transition: background-color 150ms ease;
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
-.btn-secondary:hover { background-color: rgba(250, 190, 44, 0.08); }
+.btn-secondary:hover {
+  background-color: var(--color-sarfees-gold-surface);
+  border-color: var(--color-sarfees-gold-light);
+}
 
 .btn-danger {
-  background-color: transparent;
-  color: #FF3B30;
-  border: 1.5px solid rgba(255, 59, 48, 0.4);
+  background-color: var(--color-sarfees-dark-2);
+  color: var(--color-sarfees-error);
+  border: 1.5px solid rgba(198, 40, 40, 0.35);
   font-weight: 700;
   border-radius: 10px;
   padding: 10px 18px;
   transition: background-color 150ms ease;
 }
-.btn-danger:hover { background-color: rgba(255, 59, 48, 0.08); }
+.btn-danger:hover { background-color: var(--color-sarfees-error-light); }
 
 .input-field {
   width: 100%;
-  background-color: var(--color-sarfees-dark-3);
+  background-color: var(--color-sarfees-dark-2);
   border: 1.5px solid var(--color-sarfees-border);
   color: var(--color-sarfees-text);
   border-radius: 10px;
@@ -90,7 +102,7 @@ body {
   transition: border-color 150ms ease;
 }
 .input-field:focus {
-  border-color: rgba(250, 190, 44, 0.5);
+  border-color: var(--color-sarfees-gold-bright);
 }
 .input-field::placeholder {
   color: var(--color-sarfees-soft);
@@ -101,7 +113,7 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1.2px;
-  color: var(--color-sarfees-gold);
+  color: var(--color-sarfees-soft);
   margin-bottom: 6px;
   display: block;
 }
@@ -116,7 +128,7 @@ body {
   border-radius: 6px;
   background-color: var(--color-sarfees-dark-3);
 }
-.status-pill.active   { color: #2E7D32; border: 1px solid rgba(46,125,50,0.35); }
-.status-pill.inactive { color: var(--color-sarfees-muted); border: 1px solid var(--color-sarfees-border); }
-.status-pill.on_trip  { color: var(--color-sarfees-gold); border: 1px solid rgba(250,190,44,0.35); }
-.status-pill.suspended{ color: var(--color-sarfees-error); border: 1px solid rgba(198,40,40,0.35); }
+.status-pill.active   { color: var(--color-sarfees-success); background-color: var(--color-sarfees-success-light); border: 1px solid rgba(46,125,50,0.25); }
+.status-pill.inactive { color: var(--color-sarfees-soft); border: 1px solid var(--color-sarfees-border); }
+.status-pill.on_trip  { color: var(--color-sarfees-gold); background-color: var(--color-sarfees-gold-surface); border: 1px solid var(--color-sarfees-gold-light); }
+.status-pill.suspended{ color: var(--color-sarfees-error); background-color: var(--color-sarfees-error-light); border: 1px solid rgba(198,40,40,0.25); }
