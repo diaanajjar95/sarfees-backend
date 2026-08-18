@@ -6,7 +6,12 @@ export interface ApiEnvelope<T> {
   data: T | null;
 }
 
-export type AdminRole = 'super_admin' | 'ops_manager' | 'support' | 'finance';
+export type AdminRole =
+  | 'super_admin'
+  | 'ops_manager'
+  | 'support'
+  | 'finance'
+  | 'seller';
 
 export interface AdminUser {
   id: number;

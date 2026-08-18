@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+import { getCurrentAdmin } from '@/lib/auth';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
 import type {
@@ -13,6 +15,9 @@ interface KpiTile {
 }
 
 export default async function DashboardHome() {
+  const me = await getCurrentAdmin();
+  if (me?.role === 'seller') redirect('/cards');
+
   // Pull a single page just for counts; future iterations will hit a /admin/stats endpoint.
   const allDrivers = await safe(() =>
     apiFetch<DriverListResponse>('/admin/drivers?limit=1'),
