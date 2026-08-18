@@ -50,7 +50,7 @@ const CHIP_LABEL: Record<string, string> = {
 const PILOT_COLOR: Record<string, string> = {
   yes: '#4CAF50',
   maybe: '#F57C00',
-  no: '#9090A0',
+  no: '#9E9E9E',
 };
 
 interface PageProps {
@@ -224,7 +224,7 @@ export default async function EarlyAccessPage({ searchParams }: PageProps) {
                   {r.pilotWilling ? (
                     <span
                       className="text-xs font-bold capitalize"
-                      style={{ color: PILOT_COLOR[r.pilotWilling] ?? '#9090A0' }}
+                      style={{ color: PILOT_COLOR[r.pilotWilling] ?? '#9E9E9E' }}
                     >
                       {r.pilotWilling}
                     </span>

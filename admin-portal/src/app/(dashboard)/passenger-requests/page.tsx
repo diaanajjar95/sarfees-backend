@@ -23,9 +23,9 @@ const STATUS_TABS: { value: '' | PassengerRequestStatus; label: string }[] = [
 
 const STATUS_COLOR: Record<string, { fg: string; border: string }> = {
   PENDING: { fg: '#F57C00', border: 'rgba(245,124,0,0.35)' },
-  MATCHED: { fg: '#FABE2C', border: 'rgba(250,190,44,0.35)' },
-  DRIVER_EN_ROUTE: { fg: '#FABE2C', border: 'rgba(250,190,44,0.35)' },
-  ARRIVED_AT_PICKUP: { fg: '#FABE2C', border: 'rgba(250,190,44,0.35)' },
+  MATCHED: { fg: '#B57E0A', border: 'rgba(250,190,44,0.35)' },
+  DRIVER_EN_ROUTE: { fg: '#B57E0A', border: 'rgba(250,190,44,0.35)' },
+  ARRIVED_AT_PICKUP: { fg: '#B57E0A', border: 'rgba(250,190,44,0.35)' },
   TRIP_IN_PROGRESS: { fg: '#2E7D32', border: 'rgba(46,125,50,0.35)' },
   ARRIVING_AT_DROPOFF: { fg: '#2E7D32', border: 'rgba(46,125,50,0.35)' },
   COMPLETED: { fg: '#4CAF50', border: 'rgba(76,175,80,0.35)' },
@@ -147,7 +147,7 @@ export default async function PassengerRequestsListPage({ searchParams }: PagePr
                 return (
                   <tr
                     key={r.id}
-                    className="border-t hover:bg-[rgba(255,255,255,0.02)]"
+                    className="border-t hover:bg-[#FFF8E7]"
                     style={{ borderColor: 'var(--color-sarfees-border)' }}
                   >
                     <td className="px-5 py-3">

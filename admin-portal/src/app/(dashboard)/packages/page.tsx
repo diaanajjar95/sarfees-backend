@@ -47,7 +47,7 @@ const STATUS_TABS = [
 
 const STATUS_COLOR: Record<string, { fg: string; border: string }> = {
   PENDING: { fg: '#F57C00', border: 'rgba(245,124,0,0.35)' },
-  MATCHED: { fg: '#FABE2C', border: 'rgba(250,190,44,0.35)' },
+  MATCHED: { fg: '#B57E0A', border: 'rgba(250,190,44,0.35)' },
   PICKED_UP: { fg: '#2E7D32', border: 'rgba(46,125,50,0.35)' },
   IN_TRANSIT: { fg: '#2E7D32', border: 'rgba(46,125,50,0.35)' },
   DELIVERED: { fg: '#4CAF50', border: 'rgba(76,175,80,0.35)' },
@@ -170,7 +170,7 @@ export default async function PackagesPage({ searchParams }: PageProps) {
             )}
             {resp?.data.map((p) => {
               const sc = STATUS_COLOR[p.status] ?? {
-                fg: '#9090A0',
+                fg: '#9E9E9E',
                 border: 'var(--color-sarfees-border)',
               };
               return (

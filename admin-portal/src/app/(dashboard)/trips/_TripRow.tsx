@@ -15,7 +15,7 @@ export default function TripRow({ trip, statusColor }: Props) {
 
   return (
     <tr
-      className="border-t cursor-pointer hover:bg-[rgba(255,255,255,0.02)]"
+      className="border-t cursor-pointer hover:bg-[#FFF8E7]"
       style={{ borderColor: 'var(--color-sarfees-border)' }}
       onClick={() => router.push(detailHref)}
     >
