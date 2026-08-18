@@ -193,10 +193,14 @@ export class DriversService {
         }
       : null;
 
-    // Status-conditional blocks — at most one non-null at a time.
-    // Each builder returns null when the driver's status doesn't match.
+    // Status-conditional blocks. `currentTrip` also covers ACTIVE so an
+    // accepted-but-not-started trip is visible on the home screen (the
+    // builder returns null when no accepted/in-progress trip exists);
+    // its `status` field tells the app which phase the trip is in. The
+    // remaining blocks stay exclusive to their driver status.
     const currentTrip =
-      driver.status === DriverStatus.ON_TRIP
+      driver.status === DriverStatus.ON_TRIP ||
+      driver.status === DriverStatus.ACTIVE
         ? await this.buildCurrentTrip(driver)
         : null;
     const pendingOffer =
