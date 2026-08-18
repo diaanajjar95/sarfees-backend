@@ -1130,14 +1130,14 @@ export class DriverTripsService {
         [trip.id, now],
       );
 
-      // Driver returns to inactive (must re-activate for next session per spec)
-      // and accumulates the platform's commission as outstanding balance.
+      // Driver returns to ACTIVE and keeps their session (location,
+      // preferences), so the matcher can offer the next trip right away.
+      // Exception — going-home auto-offline (master spec §9.6): a
+      // going-home driver who just arrived in their home city is locked
+      // offline until the configured day boundary (default: local
+      // midnight), and their session is cleared.
       const driver = await mgr.findOne(Driver, { where: { id: driverId } });
       if (driver) {
-        // Going-home auto-offline (master spec §9.6): if the driver was
-        // in going-home mode and this trip's destination matches their
-        // home city, they get locked offline until the configured day
-        // boundary (default: local midnight).
         const goingHomeCompleted =
           driver.prefGoingHome &&
           driver.homeCity != null &&
@@ -1145,22 +1145,18 @@ export class DriverTripsService {
             (trip.destinationCity ?? '').toLowerCase();
         if (goingHomeCompleted) {
           driver.goingHomeOfflineUntil = nextLocalMidnight();
+          driver.status = DriverStatus.INACTIVE;
+          driver.prefDestinationCity = null as unknown as string;
+          driver.prefTripTypes = null as unknown as string[];
+          driver.prefGoingHome = false;
+          driver.prefMinPassengers = null as unknown as number;
+          driver.prefActivatedAt = null as unknown as Date;
+          driver.prefLocationLat = null as unknown as number;
+          driver.prefLocationLng = null as unknown as number;
+        } else {
+          driver.status = DriverStatus.ACTIVE;
         }
-
-        driver.status = DriverStatus.INACTIVE;
         driver.totalTrips = (driver.totalTrips ?? 0) + 1;
-        // Prepaid wallet model: the commission comes OUT of the wallet
-        // (ledgered, row-locked) instead of piling onto the legacy
-        // outstandingBalance debt. May push the wallet negative — the
-        // matcher then withholds offers until the driver tops up.
-        // Clear session preferences on auto-deactivate
-        driver.prefDestinationCity = null as unknown as string;
-        driver.prefTripTypes = null as unknown as string[];
-        driver.prefGoingHome = false;
-        driver.prefMinPassengers = null as unknown as number;
-        driver.prefActivatedAt = null as unknown as Date;
-        driver.prefLocationLat = null as unknown as number;
-        driver.prefLocationLng = null as unknown as number;
         await mgr.save(driver);
       }
 
