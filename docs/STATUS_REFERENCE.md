@@ -16,7 +16,7 @@ endpoint reference.
 ### 1.1 Driver status (`status` in `/drivers/home-summary` and profile)
 
 ```
-inactive ──activate──► active ──accept+start──► on_trip
+inactive ──activate──► active ──accept──► on_trip
     ▲                    │                         │
     └────deactivate──────┘◄────complete/cancel─────┘
               (admin suspend from any state → suspended → reinstate → inactive)
@@ -26,7 +26,7 @@ inactive ──activate──► active ──accept+start──► on_trip
 |---|---|
 | `inactive` | Off shift. The matcher never considers this driver. Home tab shows the Go Online button and the `lastSession` recap. Entered on app deactivate, on admin reinstate, or automatically after completing a going-home trip into the driver's home city (locked out until local midnight — re-activating earlier returns 403). |
 | `active` | On shift and matchable. The driver locked in preferences (destination city, trip types, going-home, min passengers) at activation and streams GPS every ~10 s — that live position is what the matcher's origin-city filter uses. While active, a `pendingOffer` may appear on home-summary with a **30-second countdown**; no response counts as a decline (and declines/timeouts carry a 30-day decaying ranking penalty). |
-| `on_trip` | Executing a started trip. Home-summary carries the full `currentTrip` block (also present while still `active` with an accepted-but-unstarted trip — `currentTrip.status` distinguishes the two) (current stop, progress, on-board list, running earnings). Returns to `active` when the trip completes or is cancelled. |
+| `on_trip` | Booked on a trip — entered the moment the driver ACCEPTS an offer (before pressing Start). Home-summary carries the full `currentTrip` block; `currentTrip.status` says which phase: `accepted` (not started yet — show the Start button) or `in_progress` (current stop, progress, on-board list, running earnings). Returns to `active` when the trip completes or is cancelled. |
 | `suspended` | Blocked by ops. Activation refused. `suspensionInfo.category` tells the app which card to render: `documents` (paperwork lapse — re-upload), `rating` (below platform minimum — current vs required shown), `payment` (commission overdue — outstanding balance shown), `violation` (conduct report — 1–3 day review window + appeal), or `null` for legacy suspensions (generic card). Only admin reinstate exits this state. |
 
 ### 1.2 Driver trip status (`status` on a DriverTrip — offers and rides)
