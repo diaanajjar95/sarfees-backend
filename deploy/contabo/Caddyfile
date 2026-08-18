@@ -20,6 +20,15 @@
 	# Public marketing page — served by the admin-portal container's
 	# static bundle (public/landing/), auth-exempt in its middleware.
 	# Temporary home until the landing page moves to its own project.
+	# Anonymous package tracking page (receiver WhatsApp links).
+	handle /track/* {
+		reverse_proxy admin-portal:3001 {
+			transport http {
+				read_timeout 60s
+				write_timeout 60s
+			}
+		}
+	}
 	handle /landing* {
 		reverse_proxy admin-portal:3001 {
 			transport http {

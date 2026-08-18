@@ -19,7 +19,7 @@ import { TripRequest } from '../trips/entities/trip-request.entity';
 import { TripGroup } from '../grouping/entities/trip-group.entity';
 import { TripStatus } from '../shared/enums/trip-status.enum';
 import { TripGroupStatus } from '../shared/enums/trip-group-status.enum';
-import { randomInt } from 'crypto';
+import { randomBytes, randomInt } from 'crypto';
 
 /**
  * Sender-facing "active" statuses: anything not delivered or cancelled. Mirrors
@@ -275,6 +275,7 @@ export class PackagesService {
       // §6.5 — 4-digit delivery confirmation code. Goes to the
       // recipient (SMS mocked; the sender sees it in-app and relays).
       deliveryCode: String(randomInt(1000, 10000)),
+      trackingToken: randomBytes(12).toString('hex'),
       pickupDate,
       isImmediate: dto.isImmediate,
       urgent: dto.urgent ?? false,
