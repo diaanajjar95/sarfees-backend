@@ -354,6 +354,38 @@ export class PackagesService {
     return delivery;
   }
 
+  /**
+   * Lightweight polling endpoint — mirrors GET /trips/:id/status for
+   * package deliveries. Sender-scoped; includes the assigned driver
+   * once the package's group has one.
+   */
+  async getPackageStatus(id: number, userId: number) {
+    const delivery = await this.packagesRepository.findOne({
+      where: { id, sender: { id: userId } },
+      relations: ['tripGroup', 'tripGroup.assignedDriver'],
+    });
+    if (!delivery) {
+      throw new NotFoundException(
+        I18nContext.current()?.t('packages.Not found'),
+      );
+    }
+    const driver = delivery.tripGroup?.assignedDriver ?? null;
+    return {
+      id: delivery.id,
+      status: delivery.status,
+      updatedAt: delivery.updatedAt,
+      driver: driver
+        ? {
+            name: driver.name,
+            phoneNumber: `${driver.countryCode ?? ''}${driver.phoneNumber}`,
+            rating: Number(driver.rating),
+          }
+        : null,
+      // Shown to the receiver at handoff; the driver must quote it back.
+      deliveryCode: delivery.deliveryCode,
+    };
+  }
+
   async getPackageById(id: number, userId: number) {
     const delivery = await this.packagesRepository.findOne({
       where: { id, sender: { id: userId } },
