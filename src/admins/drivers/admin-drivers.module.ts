@@ -7,9 +7,11 @@ import { DriverTripStop } from '../../driver-trips/entities/driver-trip-stop.ent
 import { DriverTripDeclineLog } from '../../driver-trips/entities/driver-trip-decline-log.entity';
 import { AdminDriversService } from './admin-drivers.service';
 import { AdminDriversController } from './admin-drivers.controller';
+import { DriverDocumentsModule } from '../../drivers/documents/driver-documents.module';
 
 @Module({
   imports: [
+    DriverDocumentsModule,
     PassportModule,
     TypeOrmModule.forFeature([
       Driver,

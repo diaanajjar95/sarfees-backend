@@ -7,6 +7,7 @@ import type { AdminDriverDetail } from '@/lib/types';
 import { reinstateDriverAction } from '../actions';
 import SuspendWithReason from '../../_components/SuspendWithReason';
 import WalletCreditForm from './_WalletCreditForm';
+import DocumentsSection, { type DocumentRow } from './_DocumentsSection';
 
 interface WalletSummary {
   balance: number;
@@ -58,6 +59,16 @@ export default async function DriverDetailPage({ params }: PageProps) {
   // finance, ops_manager); anyone else just doesn't get the section.
   const me = await getCurrentAdmin();
   const canCredit = !!me && ['super_admin', 'finance'].includes(me.role);
+  let documents: DocumentRow[] = [];
+  try {
+    const docs = await apiFetch<{ data: DocumentRow[] }>(
+      `/admin/drivers/${driverId}/documents`,
+    );
+    documents = docs.data;
+  } catch {
+    /* section hidden on error */
+  }
+
   let wallet: WalletSummary | null = null;
   let walletTx: WalletTx[] = [];
   try {
@@ -157,6 +168,8 @@ export default async function DriverDetailPage({ params }: PageProps) {
           />
         </DataCard>
       </div>
+
+      <DocumentsSection driverId={driver.id} documents={documents} />
 
       {wallet && (
         <div className="mt-4 surface-card p-5">

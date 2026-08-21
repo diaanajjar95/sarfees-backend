@@ -67,3 +67,35 @@ export async function apiFetch<T>(
   // Endpoints with no payload return data:null; cast to T which the caller types as void.
   return (envelope.data ?? (undefined as unknown)) as T;
 }
+
+/**
+ * Multipart POST (file uploads). Same auth/envelope handling as
+ * apiFetch, but passes FormData through untouched so fetch sets the
+ * multipart boundary itself.
+ */
+export async function apiUpload<T>(
+  path: string,
+  formData: FormData,
+): Promise<T> {
+  const headers: Record<string, string> = {};
+  const token = (await cookies()).get(ACCESS_COOKIE)?.value ?? '';
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+    cache: 'no-store',
+  });
+
+  let envelope: ApiEnvelope<T> | null = null;
+  try {
+    envelope = (await res.json()) as ApiEnvelope<T>;
+  } catch {
+    throw new ApiError(res.status, `Backend returned non-JSON (HTTP ${res.status})`);
+  }
+  if (!res.ok || envelope == null) {
+    throw new ApiError(res.status, envelope?.message ?? `HTTP ${res.status}`);
+  }
+  return (envelope.data ?? (undefined as unknown)) as T;
+}

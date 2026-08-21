@@ -81,6 +81,30 @@ export class DriverDocumentsService {
   }
 
   /**
+   * Admin-side upload during registration — same replace-per-type
+   * behavior, but the document lands VERIFIED (ops uploaded it, ops
+   * is the reviewer) with the acting admin stamped as reviewer.
+   */
+  async uploadByAdmin(
+    driverId: number,
+    file: UploadedFileInfo | undefined,
+    dto: UploadDriverDocumentDto,
+    adminId: number,
+  ): Promise<DriverDocumentDto> {
+    const uploaded = await this.upload(driverId, file, dto);
+    await this.repo.update(
+      { id: uploaded.id },
+      {
+        status: DriverDocumentStatus.VERIFIED,
+        reviewedAt: new Date(),
+        reviewedById: adminId,
+      },
+    );
+    const fresh = await this.repo.findOneOrFail({ where: { id: uploaded.id } });
+    return this.toDto(fresh);
+  }
+
+  /**
    * List all documents for this driver. Empty types still show up in
    * `summary.expectedTypeCount` so the UI can render placeholder cards.
    */

@@ -9,8 +9,15 @@ import {
   Patch,
   Post,
   Query,
+  Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
+import type { Request } from 'express';
 import { AuthGuard } from '@nestjs/passport';
 import {
   ApiBearerAuth,
@@ -19,6 +26,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AdminDriversService } from './admin-drivers.service';
+import { DriverDocumentsService } from '../../drivers/documents/driver-documents.service';
+import { UploadDriverDocumentDto } from '../../drivers/documents/dto/upload-driver-document.dto';
 import { CreateDriverDto } from './dto/create-driver.dto';
 import { UpdateDriverDto } from './dto/update-driver.dto';
 import { SuspendDriverDto } from './dto/suspend-driver.dto';
@@ -39,7 +48,49 @@ import { AdminRole } from '../../shared/enums/admin-role.enum';
 @UseGuards(AuthGuard('jwt-admin'), RolesGuard)
 @Controller('admin/drivers')
 export class AdminDriversController {
-  constructor(private readonly service: AdminDriversService) {}
+  constructor(
+    private readonly service: AdminDriversService,
+    private readonly documents: DriverDocumentsService,
+  ) {}
+
+  @ApiOperation({
+    summary: "List a driver's compliance documents",
+  })
+  @Get(':id/documents')
+  listDocuments(@Param('id', ParseIntPipe) id: number) {
+    return this.documents.list(id);
+  }
+
+  @ApiOperation({
+    summary: 'Upload (or replace) a compliance document for a driver',
+    description:
+      'Registration flow — multipart with the file under `file`. Same ' +
+      'replace-per-type rule as the driver-side upload, but admin ' +
+      'uploads land VERIFIED with the acting admin as reviewer.',
+  })
+  @Post(':id/documents')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads/driver-documents',
+        filename: (req, file, cb) => {
+          const uniqueSuffix =
+            Date.now() + '-' + Math.round(Math.random() * 1e9);
+          cb(null, `${uniqueSuffix}${extname(file.originalname)}`);
+        },
+      }),
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  uploadDocument(
+    @Req() req: Request,
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: UploadDriverDocumentDto,
+  ) {
+    const adminId = (req.user as { adminId: number }).adminId;
+    return this.documents.uploadByAdmin(id, file, dto, adminId);
+  }
 
   @ApiOperation({
     summary: 'Live map — currently active drivers with location',
