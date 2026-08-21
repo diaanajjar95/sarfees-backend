@@ -354,13 +354,16 @@ export class HomeSummaryResponseDto {
   })
   announcements: AnnouncementResponseDto[];
 
-  // ─── Status-conditional blocks (at most one non-null at a time) ─
+  // ─── Status-conditional blocks ──────────────────────────────────
   @ApiPropertyOptional({
     type: CurrentTripDto,
     description:
-      "Populated iff `status === 'on_trip'`. Carries everything the " +
-      'mobile "Resume Trip" card renders so the Home tab can paint ' +
-      'without a follow-up /trips/active or /manifest call.',
+      "Populated when the driver has an accepted or in-progress trip — " +
+      "i.e. while `status` is `'on_trip'`, and also while `'active'` " +
+      "after accepting but before starting (check `currentTrip.status`: " +
+      "`accepted` = upcoming, `in_progress` = underway). Carries " +
+      'everything the mobile "Resume Trip" card renders so the Home tab ' +
+      'can paint without a follow-up /trips/active or /manifest call.',
   })
   currentTrip: CurrentTripDto | null;
 
