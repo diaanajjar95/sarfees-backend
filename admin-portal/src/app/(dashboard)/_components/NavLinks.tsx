@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   BellRing,
   Boxes,
+  CreditCard,
   DollarSign,
   HelpCircle,
   Inbox,
@@ -13,6 +14,8 @@ import {
   Megaphone,
   Package,
   Route,
+  Settings,
+  ShieldCheck,
   Sparkles,
   Users,
   UsersRound,
@@ -24,6 +27,8 @@ interface NavEntry {
   label: string;
   icon: LucideIcon;
   disabled?: boolean;
+  /** Restrict visibility to these roles; undefined = every non-seller role. */
+  roles?: string[];
 }
 
 const NAV: NavEntry[] = [
@@ -40,18 +45,25 @@ const NAV: NavEntry[] = [
   { href: '/faq', label: 'FAQ', icon: HelpCircle },
   { href: '/early-access', label: 'Early access', icon: Sparkles },
   { href: '/notifications', label: 'Notifications', icon: BellRing },
+  { href: '/cards', label: 'Cards', icon: CreditCard, roles: ['super_admin', 'seller'] },
+  { href: '/wallet-settings', label: 'Wallet settings', icon: Settings, roles: ['super_admin', 'finance'] },
+  { href: '/admins', label: 'Admins', icon: ShieldCheck, roles: ['super_admin'] },
 ];
 
 /**
  * Sidebar nav with the mockup's active-route treatment: the current
  * section gets the amber surface chip; everything else is quiet text.
  */
-export default function NavLinks() {
+export default function NavLinks({ role }: { role: string }) {
+  const visible = NAV.filter((e) =>
+    role === 'seller' ? e.roles?.includes('seller') : !e.roles || e.roles.includes(role),
+  );
+
   const pathname = usePathname();
 
   return (
     <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-      {NAV.map(({ href, label, icon: Icon, disabled }) => {
+      {visible.map(({ href, label, icon: Icon, disabled }) => {
         const active =
           href === '/' ? pathname === '/' : pathname.startsWith(href);
         return (

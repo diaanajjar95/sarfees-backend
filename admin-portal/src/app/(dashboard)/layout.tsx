@@ -47,7 +47,7 @@ export default async function DashboardLayout({
           </div>
         </div>
 
-        <NavLinks />
+        <NavLinks role={admin?.role ?? 'support'} />
 
         {admin && (
           <div

@@ -2,9 +2,37 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronLeft, Pencil } from 'lucide-react';
 import { ApiError, apiFetch } from '@/lib/api';
+import { getCurrentAdmin } from '@/lib/auth';
 import type { AdminDriverDetail } from '@/lib/types';
 import { reinstateDriverAction } from '../actions';
 import SuspendWithReason from '../../_components/SuspendWithReason';
+import WalletCreditForm from './_WalletCreditForm';
+
+interface WalletSummary {
+  balance: number;
+  lowBalanceThreshold: number;
+  isLow: boolean;
+  commissionPercent: number;
+}
+
+interface WalletTx {
+  id: number;
+  type: string;
+  amount: number;
+  balanceAfter: number;
+  note: string | null;
+  tripId: number | null;
+  cardCodeMasked: string | null;
+  createdAt: string;
+}
+
+const TX_LABEL: Record<string, string> = {
+  card_topup: 'Card top-up',
+  admin_credit: 'Manual credit',
+  refund: 'Refund',
+  commission: 'Trip commission',
+  adjustment: 'Adjustment',
+};
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -25,6 +53,25 @@ export default async function DriverDetailPage({ params }: PageProps) {
 
   const isSuspended = driver.status === 'suspended';
   const onTrip = driver.status === 'on_trip';
+
+  // Wallet block — visible to roles the API allows (super_admin,
+  // finance, ops_manager); anyone else just doesn't get the section.
+  const me = await getCurrentAdmin();
+  const canCredit = !!me && ['super_admin', 'finance'].includes(me.role);
+  let wallet: WalletSummary | null = null;
+  let walletTx: WalletTx[] = [];
+  try {
+    const [summary, txPage] = await Promise.all([
+      apiFetch<WalletSummary>(`/admin/wallets/${driverId}`),
+      apiFetch<{ data: WalletTx[] }>(
+        `/admin/wallets/${driverId}/transactions?limit=10`,
+      ),
+    ]);
+    wallet = summary;
+    walletTx = txPage.data;
+  } catch {
+    /* role not allowed or wallet unavailable — hide the section */
+  }
 
   return (
     <div>
@@ -110,6 +157,90 @@ export default async function DriverDetailPage({ params }: PageProps) {
           />
         </DataCard>
       </div>
+
+      {wallet && (
+        <div className="mt-4 surface-card p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2
+              className="text-[11px] font-semibold uppercase tracking-widest"
+              style={{ color: 'var(--color-sarfees-gold)' }}
+            >
+              Wallet
+            </h2>
+            {wallet.isLow && (
+              <span
+                className="rounded px-2 py-0.5 text-xs font-bold"
+                style={{ color: 'var(--color-sarfees-error)', background: 'var(--color-sarfees-error-light)' }}
+              >
+                low balance
+              </span>
+            )}
+          </div>
+          <div className="mt-3 flex flex-wrap items-baseline gap-x-8 gap-y-2">
+            <div>
+              <div className="text-2xl font-extrabold">
+                {Number(wallet.balance).toFixed(2)} JD
+              </div>
+              <div className="text-xs" style={{ color: 'var(--color-sarfees-soft)' }}>
+                current balance
+              </div>
+            </div>
+            <div className="text-sm" style={{ color: 'var(--color-sarfees-muted)' }}>
+              Commission {Number(wallet.commissionPercent)}% of trip total ·
+              warning below {Number(wallet.lowBalanceThreshold).toFixed(2)} JD
+            </div>
+          </div>
+
+          {canCredit && <WalletCreditForm driverId={driver.id} />}
+
+          <div className="mt-4">
+            {walletTx.length === 0 ? (
+              <p className="text-sm" style={{ color: 'var(--color-sarfees-muted)' }}>
+                No wallet activity yet.
+              </p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr
+                    className="text-[11px] font-semibold uppercase tracking-widest text-left"
+                    style={{ color: 'var(--color-sarfees-soft)' }}
+                  >
+                    <th className="py-2">Type</th>
+                    <th className="py-2">Detail</th>
+                    <th className="py-2 text-right">Amount</th>
+                    <th className="py-2 text-right">Balance after</th>
+                    <th className="py-2 text-right">When</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {walletTx.map((t) => (
+                    <tr
+                      key={t.id}
+                      className="border-t"
+                      style={{ borderColor: 'var(--color-sarfees-border)' }}
+                    >
+                      <td className="py-2 font-semibold">{TX_LABEL[t.type] ?? t.type}</td>
+                      <td className="py-2" style={{ color: 'var(--color-sarfees-muted)' }}>
+                        {t.cardCodeMasked ?? (t.tripId ? `Trip #${t.tripId}` : t.note ?? '—')}
+                      </td>
+                      <td
+                        className="py-2 text-right font-semibold"
+                        style={{ color: t.amount >= 0 ? '#2E7D32' : 'var(--color-sarfees-error)' }}
+                      >
+                        {t.amount >= 0 ? '+' : ''}{Number(t.amount).toFixed(2)} JD
+                      </td>
+                      <td className="py-2 text-right">{Number(t.balanceAfter).toFixed(2)} JD</td>
+                      <td className="py-2 text-right" style={{ color: 'var(--color-sarfees-soft)' }}>
+                        {fmtDateTime(t.createdAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
 
       {driver.activePreferences && (
         <div className="mt-4 surface-card p-5">
