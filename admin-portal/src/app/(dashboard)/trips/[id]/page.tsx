@@ -27,24 +27,24 @@ interface PageProps {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  offered: '#FABE2C',
-  accepted: '#FABE2C',
+  offered: '#B57E0A',
+  accepted: '#B57E0A',
   in_progress: '#2E7D32',
   completed: '#4CAF50',
   cancelled: '#C62828',
-  expired: '#9090A0',
-  declined: '#9090A0',
+  expired: '#9E9E9E',
+  declined: '#9E9E9E',
 };
 
 const EVENT_META: Record<
   LifecycleEventKind,
   { Icon: typeof Send; color: string }
 > = {
-  offered: { Icon: Send, color: '#FABE2C' },
-  offer_expired: { Icon: TimerOff, color: '#9090A0' },
-  accepted: { Icon: UserCheck, color: '#FABE2C' },
-  declined: { Icon: UserX, color: '#9090A0' },
-  started: { Icon: PlayCircle, color: '#FABE2C' },
+  offered: { Icon: Send, color: '#B57E0A' },
+  offer_expired: { Icon: TimerOff, color: '#9E9E9E' },
+  accepted: { Icon: UserCheck, color: '#B57E0A' },
+  declined: { Icon: UserX, color: '#9E9E9E' },
+  started: { Icon: PlayCircle, color: '#B57E0A' },
   arrived_stop: { Icon: MapPin, color: '#2F80ED' },
   pickup_confirmed: { Icon: PackageCheck, color: '#2E7D32' },
   dropoff_confirmed: { Icon: HandCoins, color: '#2E7D32' },
@@ -89,7 +89,7 @@ export default async function TripDetailPage({ params }: PageProps) {
             <span
               className="status-pill"
               style={{
-                color: STATUS_COLOR[trip.status] ?? '#9090A0',
+                color: STATUS_COLOR[trip.status] ?? '#9E9E9E',
                 border: `1px solid ${STATUS_COLOR[trip.status] ?? 'var(--color-sarfees-border)'}`,
               }}
             >
@@ -220,7 +220,7 @@ export default async function TripDetailPage({ params }: PageProps) {
               }}
             />
             {trip.lifecycle.map((e, i) => {
-              const meta = EVENT_META[e.kind] ?? { Icon: Clock, color: '#9090A0' };
+              const meta = EVENT_META[e.kind] ?? { Icon: Clock, color: '#9E9E9E' };
               const Icon = meta.Icon;
               return (
                 <li
@@ -335,7 +335,7 @@ export default async function TripDetailPage({ params }: PageProps) {
                   s.status === 'confirmed'
                     ? '#4CAF50'
                     : s.status === 'arrived'
-                      ? '#FABE2C'
+                      ? '#B57E0A'
                       : 'var(--color-sarfees-border)'
                 }`,
               }}

@@ -270,6 +270,21 @@ export class CurrentTripDto {
  * sessionStartedAt) so the mobile app doesn't have to compose two
  * calls every time it refreshes the Home tab.
  */
+export class WalletSummaryDto {
+  @ApiProperty({ example: 12.5, description: 'Prepaid wallet balance (JD)' })
+  balance: number;
+
+  @ApiProperty({ example: 5 })
+  lowBalanceThreshold: number;
+
+  @ApiProperty({
+    description:
+      'True when the balance is under the platform threshold — the app ' +
+      'should surface the "top up to keep receiving trips" warning.',
+  })
+  isLow: boolean;
+}
+
 export class HomeSummaryResponseDto {
   // ─── Live session state ────────────────────────────────────
   @ApiProperty({
@@ -325,18 +340,30 @@ export class HomeSummaryResponseDto {
   @ApiProperty({ example: 0 }) outstandingBalance: number;
 
   @ApiProperty({
+    type: WalletSummaryDto,
+    description:
+      'Prepaid wallet the platform commission is deducted from. When ' +
+      'the balance cannot cover a trip\'s commission the driver gets no ' +
+      'offers until they top up at a card seller.',
+  })
+  wallet: WalletSummaryDto;
+
+  @ApiProperty({
     type: [AnnouncementResponseDto],
     description: 'Active ops announcements (highest priority first).',
   })
   announcements: AnnouncementResponseDto[];
 
-  // ─── Status-conditional blocks (at most one non-null at a time) ─
+  // ─── Status-conditional blocks ──────────────────────────────────
   @ApiPropertyOptional({
     type: CurrentTripDto,
     description:
-      "Populated iff `status === 'on_trip'`. Carries everything the " +
-      'mobile "Resume Trip" card renders so the Home tab can paint ' +
-      'without a follow-up /trips/active or /manifest call.',
+      "Populated when the driver has an accepted or in-progress trip — " +
+      "i.e. while `status` is `'on_trip'`, and also while `'active'` " +
+      "after accepting but before starting (check `currentTrip.status`: " +
+      "`accepted` = upcoming, `in_progress` = underway). Carries " +
+      'everything the mobile "Resume Trip" card renders so the Home tab ' +
+      'can paint without a follow-up /trips/active or /manifest call.',
   })
   currentTrip: CurrentTripDto | null;
 

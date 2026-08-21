@@ -48,8 +48,8 @@ const STATUS_TABS = [
 const STATUS_COLOR: Record<string, { fg: string; border: string }> = {
   open: { fg: '#2F80ED', border: 'rgba(47,128,237,0.35)' },
   frozen: { fg: '#F57C00', border: 'rgba(245,124,0,0.35)' },
-  offering: { fg: '#FABE2C', border: 'rgba(250,190,44,0.35)' },
-  broadcasting: { fg: '#FABE2C', border: 'rgba(250,190,44,0.35)' },
+  offering: { fg: '#B57E0A', border: 'rgba(250,190,44,0.35)' },
+  broadcasting: { fg: '#B57E0A', border: 'rgba(250,190,44,0.35)' },
   assigned: { fg: '#4CAF50', border: 'rgba(76,175,80,0.35)' },
   in_progress: { fg: '#2E7D32', border: 'rgba(46,125,50,0.35)' },
   completed: { fg: '#4CAF50', border: 'rgba(76,175,80,0.35)' },
@@ -178,7 +178,7 @@ export default async function TripGroupsPage({ searchParams }: PageProps) {
             )}
             {resp?.data.map((g) => {
               const sc = STATUS_COLOR[g.status] ?? {
-                fg: '#9090A0',
+                fg: '#9E9E9E',
                 border: 'var(--color-sarfees-border)',
               };
               return (

@@ -105,6 +105,19 @@ export class PackagesController {
     return this.packagesService.cancelDelivery(req.user.userId, id);
   }
 
+  @ApiOperation({
+    summary: 'Poll package status (lightweight)',
+    description:
+      'Mirror of GET /trips/{id}/status for package deliveries. ' +
+      'Sender-scoped. Includes the assigned driver once matched and ' +
+      'the delivery handoff code.',
+  })
+  @ApiResponse({ status: 200, description: 'Status snapshot' })
+  @Get(':id/status')
+  getPackageStatus(@Req() req: any, @Param('id', ParseIntPipe) id: number) {
+    return this.packagesService.getPackageStatus(id, req.user.userId);
+  }
+
   @ApiOperation({ summary: 'Get a specific package delivery by ID' })
   @ApiResponse({ status: 200, description: 'Package delivery details' })
   @Get(':id')

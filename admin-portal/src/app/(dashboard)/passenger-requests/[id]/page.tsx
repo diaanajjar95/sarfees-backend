@@ -31,9 +31,9 @@ export default async function PassengerRequestDetailPage({ params }: PageProps) 
     type: req.isFemaleOnly ? 'women_only' : 'shared',
     originCity: req.departureCity ?? '',
     destinationCity: req.arrivalCity ?? '',
-    departureTime: req.travelDate
-      ? new Date(req.travelDate).toISOString().slice(0, 16)
-      : new Date().toISOString().slice(0, 16),
+    departureTime: toDatetimeLocal(
+      req.travelDate ? new Date(req.travelDate) : new Date(),
+    ),
     pickupLat: String(req.departureLat),
     pickupLng: String(req.departureLng),
     dropoffLat: String(req.arrivalLat),
@@ -164,4 +164,14 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
       <dd className="font-semibold text-right">{value}</dd>
     </div>
   );
+}
+
+/**
+ * Format for a datetime-local input in SERVER-LOCAL time (the portal
+ * container runs TZ=Asia/Amman). toISOString() must never be used here:
+ * it renders UTC, which shifted manual-trip departures by -3h.
+ */
+function toDatetimeLocal(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }

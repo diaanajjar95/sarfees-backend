@@ -33,11 +33,16 @@ wraps payloads as `{ "code", "message", "data" }`.
 |---|---|---|
 | `inactive` | Off shift. Not considered by the matcher. | `lastSession` (if they had one) |
 | `active` | On shift, matchable. May carry a live offer. | `pendingOffer` (only while an offer is live) |
-| `on_trip` | Executing an accepted trip. | `currentTrip` |
+| `on_trip` | Booked on a trip — set at ACCEPT, before Start. | `currentTrip` (`status`: `accepted` \| `in_progress`) |
 | `suspended` | Blocked by ops. Cannot activate. | `suspensionInfo` |
 
-At most one of `currentTrip` / `pendingOffer` / `lastSession` /
-`suspensionInfo` is non-null at a time. Everything else
+Accepting an offer flips the driver to `on_trip` immediately —
+`currentTrip` appears from that moment. Use `currentTrip.status`
+(`accepted` vs `in_progress`) to pick between the "Upcoming trip" card
+(with its Start button, `POST /drivers/trips/{currentTrip.id}/start`)
+and the "Resume Trip" card. At most one of `currentTrip` /
+`pendingOffer` / `lastSession` / `suspensionInfo` is non-null at a
+time. Everything else
 (`todayEarnings`, `tripsCompletedToday`, `commissionPercentageToday`,
 `lastTrip`, `outstandingBalance`, `announcements`) is always present.
 

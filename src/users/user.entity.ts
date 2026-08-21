@@ -28,6 +28,13 @@ export class User {
   @Column({ nullable: true })
   lastName: string;
 
+  // ─── Reputation (rated by drivers after each trip) ──────────
+  @Column({ type: 'decimal', precision: 3, scale: 2, default: 5.0 })
+  rating: number;
+
+  @Column({ default: 0 })
+  ratingCount: number;
+
   @Column({ type: 'enum', enum: ['Male', 'Female'], nullable: true })
   gender: string;
 

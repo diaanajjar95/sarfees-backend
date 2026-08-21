@@ -41,6 +41,12 @@ export interface GroupLoad {
   hasPackages: boolean;
   /** Vehicle-class capacity lookup by class enum key. */
   capacityByClass: Map<string, VehicleClassCapacity>;
+  /**
+   * Prepaid-wallet gate: commission the platform will deduct for this
+   * group (commissionPercent × group total price). A driver whose
+   * walletBalance can't cover it is skipped.
+   */
+  requiredWalletCommission: number;
 }
 
 /** Every eligible driver must pass every filter — no half-passes. */
@@ -131,6 +137,12 @@ export function isDriverEligible(
     const dest = (group.destCity.nameEn ?? '').toLowerCase();
     if (!home || home !== dest)
       return { ok: false, reason: 'going_home_dest_mismatch' };
+  }
+
+  // Prepaid wallet (§ wallet spec): the balance must cover this
+  // group's commission or the driver receives no offer for it.
+  if (Number(driver.walletBalance) < load.requiredWalletCommission) {
+    return { ok: false, reason: 'insufficient_wallet_balance' };
   }
 
   return { ok: true };

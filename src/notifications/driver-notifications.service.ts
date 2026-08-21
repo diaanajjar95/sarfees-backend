@@ -1,4 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { PushService } from '../push/push.service';
+import { DeviceOwnerType } from '../push/entities/device-token.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import {
@@ -28,6 +30,7 @@ export class DriverNotificationsService {
   constructor(
     @InjectRepository(DriverNotification)
     private readonly notificationsRepo: Repository<DriverNotification>,
+    private readonly push: PushService,
   ) {}
 
   // ─── Emission API (called from other services) ─────────────
@@ -40,7 +43,20 @@ export class DriverNotificationsService {
       payload: input.payload,
       read: false,
     });
-    return this.notificationsRepo.save(entity);
+    const saved = await this.notificationsRepo.save(entity);
+
+    // Piggyback an FCM push — fire-and-forget; no-op until Firebase
+    // credentials are configured.
+    void this.push.sendToOwner(DeviceOwnerType.DRIVER, input.driverId, {
+      title: input.title,
+      body: input.body,
+      data: {
+        type: input.type,
+        payload: JSON.stringify(input.payload ?? {}),
+      },
+    });
+
+    return saved;
   }
 
   // ─── Read API ──────────────────────────────────────────────

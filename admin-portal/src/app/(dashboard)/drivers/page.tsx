@@ -132,7 +132,7 @@ export default async function DriversListPage({ searchParams }: PageProps) {
               {resp.data.map((d) => (
                 <tr
                   key={d.id}
-                  className="border-t cursor-pointer hover:bg-[rgba(255,255,255,0.02)]"
+                  className="border-t cursor-pointer hover:bg-[#FFF8E7]"
                   style={{ borderColor: 'var(--color-sarfees-border)' }}
                 >
                   <td className="px-5 py-3">

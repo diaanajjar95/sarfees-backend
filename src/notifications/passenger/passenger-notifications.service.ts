@@ -15,6 +15,9 @@ import {
   PassengerNotificationItemDto,
 } from './dto/list-passenger-notifications.dto';
 import { MarkPassengerReadDto } from './dto/mark-passenger-read.dto';
+import { PushService } from '../../push/push.service';
+import { DeviceOwnerType } from '../../push/entities/device-token.entity';
+import { ConfigService } from '@nestjs/config';
 
 interface CreatePassengerNotificationInput {
   userId: number;
@@ -31,6 +34,8 @@ export class PassengerNotificationsService {
   constructor(
     @InjectRepository(PassengerNotification)
     private readonly notificationsRepo: Repository<PassengerNotification>,
+    private readonly push: PushService,
+    private readonly cfg: ConfigService,
   ) {}
 
   // ─── Emission API (called from trip / package services) ────
@@ -47,7 +52,22 @@ export class PassengerNotificationsService {
       payload: input.payload,
       read: false,
     });
-    return this.notificationsRepo.save(entity);
+    const saved = await this.notificationsRepo.save(entity);
+
+    // Piggyback an FCM push (fire-and-forget; no-op until Firebase
+    // credentials are configured). Language: PUSH_DEFAULT_LANGUAGE
+    // (ar default for the market) until users carry a language pref.
+    const lang = this.cfg.get<string>('PUSH_DEFAULT_LANGUAGE') ?? 'ar';
+    void this.push.sendToOwner(DeviceOwnerType.PASSENGER, input.userId, {
+      title: lang === 'ar' ? input.titleAr : input.titleEn,
+      body: lang === 'ar' ? input.bodyAr : input.bodyEn,
+      data: {
+        type: input.type,
+        payload: JSON.stringify(input.payload ?? {}),
+      },
+    });
+
+    return saved;
   }
 
   // ─── Read API ──────────────────────────────────────────────

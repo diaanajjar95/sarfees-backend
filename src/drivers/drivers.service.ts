@@ -21,7 +21,11 @@ import { Driver } from './driver.entity';
 import { DriverDocument } from './documents/driver-document.entity';
 import { DriverStatus } from '../shared/enums/driver-status.enum';
 import { DriverSuspensionCategory } from '../shared/enums/driver-suspension-category.enum';
-import { DriverTrip } from '../driver-trips/entities/driver-trip.entity';
+import {
+  tripCommission,
+  DriverTrip,
+} from '../driver-trips/entities/driver-trip.entity';
+import { WalletConfigService } from '../wallets/wallet-config.service';
 import { DriverTripStop } from '../driver-trips/entities/driver-trip-stop.entity';
 import { DriverTripStopPassenger } from '../driver-trips/entities/driver-trip-stop-passenger.entity';
 import { DriverTripStopPackage } from '../driver-trips/entities/driver-trip-stop-package.entity';
@@ -76,6 +80,7 @@ export class DriversService {
     private readonly announcementsService: AnnouncementsService,
     private readonly configService: ConfigService,
     @Inject(MAP_PROVIDER) private readonly mapProvider: MapProvider,
+    private readonly walletConfig: WalletConfigService,
   ) {}
 
   // ─── Lookups (used by auth slice) ──────────────────────────
@@ -138,17 +143,22 @@ export class DriversService {
       0,
     );
     const totalCommissionToday = todayTrips.reduce(
-      (n, t) =>
-        n +
-        (Number(t.totalCashCollected) || 0) * (Number(t.commissionRate) || 0),
+      (n, t) => n + tripCommission(t),
       0,
     );
-    // Effective commission % across today's cash. Falls back to the platform
-    // default (15%) on a fresh day with no completed trips yet.
+    // Effective commission % across today's cash. Falls back to the
+    // configured platform rate on a fresh day with no completed trips.
+    const walletCfg = await this.walletConfig.getConfig();
     const commissionPercentageToday =
       totalCashToday > 0
         ? Math.round((totalCommissionToday / totalCashToday) * 1000) / 10
-        : 15;
+        : Number(walletCfg.commissionPercent);
+    const walletBalance = Number(driver.walletBalance);
+    const wallet = {
+      balance: walletBalance,
+      lowBalanceThreshold: Number(walletCfg.lowBalanceThresholdJod),
+      isLow: walletBalance < Number(walletCfg.lowBalanceThresholdJod),
+    };
 
     const lastCompleted = await this.driverTripsRepository.findOne({
       where: {
@@ -183,10 +193,14 @@ export class DriversService {
         }
       : null;
 
-    // Status-conditional blocks — at most one non-null at a time.
-    // Each builder returns null when the driver's status doesn't match.
+    // Status-conditional blocks. `currentTrip` also covers ACTIVE so an
+    // accepted-but-not-started trip is visible on the home screen (the
+    // builder returns null when no accepted/in-progress trip exists);
+    // its `status` field tells the app which phase the trip is in. The
+    // remaining blocks stay exclusive to their driver status.
     const currentTrip =
-      driver.status === DriverStatus.ON_TRIP
+      driver.status === DriverStatus.ON_TRIP ||
+      driver.status === DriverStatus.ACTIVE
         ? await this.buildCurrentTrip(driver)
         : null;
     const pendingOffer =
@@ -218,6 +232,7 @@ export class DriversService {
           }
         : null,
       outstandingBalance: Number(driver.outstandingBalance),
+      wallet,
       announcements,
       currentTrip,
       pendingOffer,

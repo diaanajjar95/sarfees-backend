@@ -1,38 +1,9 @@
 import Link from 'next/link';
-import {
-  LayoutDashboard,
-  Users,
-  Route,
-  Inbox,
-  DollarSign,
-  Map as MapIcon,
-  Megaphone,
-  Package,
-  Sparkles,
-  HelpCircle,
-  LogOut,
-  Boxes,
-} from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { getCurrentAdmin, logoutAction } from '@/lib/auth';
+import NavLinks from './_components/NavLinks';
 
-const NAV: {
-  href: string;
-  label: string;
-  icon: typeof Users;
-  disabled?: boolean;
-}[] = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/map', label: 'Live map', icon: MapIcon },
-  { href: '/passenger-requests', label: 'Passenger requests', icon: Inbox },
-  { href: '/groups', label: 'Trip groups', icon: Boxes },
-  { href: '/packages', label: 'Packages', icon: Package },
-  { href: '/drivers', label: 'Drivers', icon: Users },
-  { href: '/trips', label: 'Trips', icon: Route },
-  { href: '/earnings', label: 'Earnings', icon: DollarSign },
-  { href: '/announcements', label: 'Announcements', icon: Megaphone },
-  { href: '/faq', label: 'FAQ', icon: HelpCircle },
-  { href: '/early-access', label: 'Early access', icon: Sparkles },
-];
+
 
 export default async function DashboardLayout({
   children,
@@ -76,36 +47,7 @@ export default async function DashboardLayout({
           </div>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1">
-          {NAV.map(({ href, label, icon: Icon, disabled }) => (
-            <Link
-              key={href}
-              href={disabled ? '#' : href}
-              aria-disabled={disabled}
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
-                disabled
-                  ? 'cursor-not-allowed'
-                  : 'hover:bg-[rgba(250,190,44,0.08)]'
-              }`}
-              style={{
-                color: disabled
-                  ? 'var(--color-sarfees-soft)'
-                  : 'var(--color-sarfees-text)',
-              }}
-            >
-              <Icon size={16} />
-              <span>{label}</span>
-              {disabled && (
-                <span
-                  className="ml-auto text-[9px] uppercase tracking-widest"
-                  style={{ color: 'var(--color-sarfees-soft)' }}
-                >
-                  soon
-                </span>
-              )}
-            </Link>
-          ))}
-        </nav>
+        <NavLinks role={admin?.role ?? 'support'} />
 
         {admin && (
           <div

@@ -19,7 +19,7 @@ import { TripRequest } from '../trips/entities/trip-request.entity';
 import { TripGroup } from '../grouping/entities/trip-group.entity';
 import { TripStatus } from '../shared/enums/trip-status.enum';
 import { TripGroupStatus } from '../shared/enums/trip-group-status.enum';
-import { randomInt } from 'crypto';
+import { randomBytes, randomInt } from 'crypto';
 
 /**
  * Sender-facing "active" statuses: anything not delivered or cancelled. Mirrors
@@ -275,6 +275,7 @@ export class PackagesService {
       // §6.5 — 4-digit delivery confirmation code. Goes to the
       // recipient (SMS mocked; the sender sees it in-app and relays).
       deliveryCode: String(randomInt(1000, 10000)),
+      trackingToken: randomBytes(12).toString('hex'),
       pickupDate,
       isImmediate: dto.isImmediate,
       urgent: dto.urgent ?? false,
@@ -351,6 +352,38 @@ export class PackagesService {
       );
     }
     return delivery;
+  }
+
+  /**
+   * Lightweight polling endpoint — mirrors GET /trips/:id/status for
+   * package deliveries. Sender-scoped; includes the assigned driver
+   * once the package's group has one.
+   */
+  async getPackageStatus(id: number, userId: number) {
+    const delivery = await this.packagesRepository.findOne({
+      where: { id, sender: { id: userId } },
+      relations: ['tripGroup', 'tripGroup.assignedDriver'],
+    });
+    if (!delivery) {
+      throw new NotFoundException(
+        I18nContext.current()?.t('packages.Not found'),
+      );
+    }
+    const driver = delivery.tripGroup?.assignedDriver ?? null;
+    return {
+      id: delivery.id,
+      status: delivery.status,
+      updatedAt: delivery.updatedAt,
+      driver: driver
+        ? {
+            name: driver.name,
+            phoneNumber: `${driver.countryCode ?? ''}${driver.phoneNumber}`,
+            rating: Number(driver.rating),
+          }
+        : null,
+      // Shown to the receiver at handoff; the driver must quote it back.
+      deliveryCode: delivery.deliveryCode,
+    };
   }
 
   async getPackageById(id: number, userId: number) {

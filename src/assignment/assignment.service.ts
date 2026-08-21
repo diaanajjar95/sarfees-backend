@@ -29,6 +29,8 @@ import { TripRequest } from '../trips/entities/trip-request.entity';
 import { EscalationCase } from './entities/escalation-case.entity';
 import { TripOfferHistory } from './entities/trip-offer-history.entity';
 import { GroupLoad, isDriverEligible, rankDrivers } from './ranking';
+import { WalletConfigService } from '../wallets/wallet-config.service';
+import { WalletsService } from '../wallets/wallets.service';
 import { PackageDelivery } from '../packages/entities/package-delivery.entity';
 import { VehicleClassCapacity } from '../matching-config/vehicle-class-capacity.entity';
 import { slotsFor } from '../grouping/compatibility';
@@ -71,6 +73,8 @@ export class AssignmentService {
     @InjectRepository(VehicleClassCapacity)
     private readonly vehicleCapacityRepo: Repository<VehicleClassCapacity>,
     private readonly matchingConfigService: MatchingConfigService,
+    private readonly walletConfigService: WalletConfigService,
+    private readonly walletsService: WalletsService,
     @Inject(forwardRef(() => DriverTripsService))
     private readonly driverTripsService: DriverTripsService,
     private readonly driverNotifications: DriverNotificationsService,
@@ -347,10 +351,19 @@ export class AssignmentService {
         (dt.status === DriverTripStatus.ACCEPTED ||
           dt.status === DriverTripStatus.OFFERED)
       ) {
+        const wasAccepted = dt.status === DriverTripStatus.ACCEPTED;
         dt.status = DriverTripStatus.CANCELLED;
         dt.cancelledAt = new Date();
         dt.cancellationReason = 'all_passengers_cancelled';
         await this.driverTripsRepo.save(dt);
+        // An accepted driver was flipped ON_TRIP at accept — release
+        // them back to ACTIVE so they can receive offers again.
+        if (wasAccepted) {
+          await this.driversRepo.update(
+            { id: group.assignedDriver.id, status: DriverStatus.ON_TRIP },
+            { status: DriverStatus.ACTIVE },
+          );
+        }
       }
       await this.driverNotifications.emit({
         driverId: group.assignedDriver.id,
@@ -391,6 +404,17 @@ export class AssignmentService {
     const capacityByClass = new Map(
       capRows.map((r) => [r.vehicleClass as string, r]),
     );
+    // Prepaid-wallet gate input: this group's total price × the
+    // current commission %. Same total formula seedTrip uses for
+    // totalCashExpected, so the gate and the completion-time
+    // deduction agree.
+    const totalPriceJod =
+      requests.reduce((n, r) => n + Number(r.totalFare ?? 0), 0) +
+      packages.reduce((n, p) => n + Number(p.deliveryFee ?? 0), 0);
+    const commissionFraction = await this.walletConfigService.commissionFraction();
+    const requiredWalletCommission =
+      Math.round(totalPriceJod * commissionFraction * 100) / 100;
+
     return {
       totalSeats: requests.reduce((n, r) => n + (r.seatsCount ?? 1), 0),
       totalPackageSlots: packages.reduce(
@@ -404,6 +428,7 @@ export class AssignmentService {
       hasPassengers: requests.length > 0,
       hasPackages: packages.length > 0,
       capacityByClass,
+      requiredWalletCommission,
     };
   }
 
@@ -503,12 +528,26 @@ export class AssignmentService {
     const originCity = group.originCity;
     const radius =
       originCity.serviceRadiusMeters ?? cfg.defaultServiceRadiusMeters;
+    const walletBlocked: Driver[] = [];
     const eligible = online.filter((d) => {
       if (alreadyOfferedIds.has(d.id)) return false;
       if (busyDriverIds.has(d.id)) return false;
       if (skipDriverIds.has(d.id)) return false;
-      return isDriverEligible(d, group, originCity, radius, load).ok;
+      const verdict = isDriverEligible(d, group, originCity, radius, load);
+      if (!verdict.ok && verdict.reason === 'insufficient_wallet_balance') {
+        walletBlocked.push(d);
+      }
+      return verdict.ok;
     });
+
+    // Nudge drivers who missed this trip purely for wallet reasons —
+    // fire-and-forget, cooldown-deduped inside the wallet service.
+    for (const d of walletBlocked) {
+      void this.walletsService.maybeNotifyLowBalance(
+        d,
+        load.requiredWalletCommission,
+      );
+    }
 
     if (eligible.length === 0) {
       await this.escalateOrBroadcast(group, skipDriverIds);

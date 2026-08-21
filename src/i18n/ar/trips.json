@@ -12,5 +12,9 @@
   "Status updated": "تم تحديث حالة الرحلة بنجاح",
   "Trip not active": "تحديثات الموقع مسموح بها فقط للرحلات النشطة",
   "No driver assigned": "لم يتم تعيين سائق لهذه الرحلة بعد",
-  "No driver location": "موقع السائق غير متاح حالياً"
+  "No driver location": "موقع السائق غير متاح حالياً",
+  "Bad rating needs message": "أخبرنا بما حدث — الرسالة مطلوبة عند التقييم السيئ.",
+  "Rate after completion": "يمكنك التقييم فقط بعد اكتمال الرحلة.",
+  "Already rated": "تم تقييم هذه الرحلة من قبل.",
+  "Passenger not on trip": "هذا الراكب لم يكن ضمن هذه الرحلة."
 }

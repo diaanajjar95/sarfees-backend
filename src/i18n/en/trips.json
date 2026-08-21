@@ -12,5 +12,9 @@
   "Status updated": "Trip status updated successfully",
   "Trip not active": "Location updates are only allowed for active trips",
   "No driver assigned": "No driver has been assigned to this trip yet",
-  "No driver location": "Driver location is not available yet"
+  "No driver location": "Driver location is not available yet",
+  "Bad rating needs message": "Please tell us what went wrong — a message is required with a bad rating.",
+  "Rate after completion": "You can rate only after the trip is completed.",
+  "Already rated": "This trip has already been rated.",
+  "Passenger not on trip": "This passenger was not served on this trip."
 }

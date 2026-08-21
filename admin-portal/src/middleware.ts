@@ -13,6 +13,11 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Anonymous package tracking — the receiver's WhatsApp link.
+  if (pathname.startsWith('/track/')) {
+    return NextResponse.next();
+  }
+
   const hasAccess = !!req.cookies.get(ACCESS_COOKIE)?.value;
   const adminCookie = req.cookies.get(ADMIN_COOKIE)?.value;
 

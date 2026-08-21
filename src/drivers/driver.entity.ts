@@ -85,6 +85,21 @@ export class Driver {
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
   outstandingBalance: number;
 
+  // ─── Prepaid wallet ───────────────────────────────────────────
+  /**
+   * Prepaid balance the platform's commission is deducted from at
+   * trip completion. Every change goes through
+   * WalletsService.applyTransaction (row-locked + ledgered). May go
+   * negative only via a completion-time deduction; while the balance
+   * can't cover a trip's commission, the matcher skips this driver.
+   */
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+  walletBalance: number;
+
+  /** Low-balance notification dedupe stamp; reset on top-up. */
+  @Column({ type: 'timestamp', nullable: true })
+  walletLowBalanceNotifiedAt: Date | null;
+
   // ─── Active Session Preferences (populated only while active) ─
   @Column({ nullable: true })
   prefDestinationCity: string;

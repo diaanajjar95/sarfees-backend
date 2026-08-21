@@ -20,12 +20,16 @@ import { PassengerNotificationsModule } from './notifications/passenger/passenge
 import { AdminsModule } from './admins/admins.module';
 import { AdminAuthModule } from './auth/admin/admin-auth.module';
 import { AdminDriversModule } from './admins/drivers/admin-drivers.module';
+import { AdminCustomersModule } from './admins/customers/admin-customers.module';
 import { AdminTripsModule } from './admins/trips/admin-trips.module';
 import { AdminEarningsModule } from './admins/earnings/admin-earnings.module';
 import { AdminPassengerRequestsModule } from './admins/passenger-requests/admin-passenger-requests.module';
 import { AdminTripGroupsModule } from './admins/trip-groups/admin-trip-groups.module';
 import { AdminPackagesModule } from './admins/packages/admin-packages.module';
 import { EarlyAccessModule } from './early-access/early-access.module';
+import { WalletsModule } from './wallets/wallets.module';
+import { RatingsModule } from './ratings/ratings.module';
+import { PushModule } from './push/push.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import { FaqModule } from './faq/faq.module';
 import { MapModule } from './shared/map/map.module';
@@ -92,12 +96,16 @@ import * as path from 'path';
     AdminsModule,
     AdminAuthModule,
     AdminDriversModule,
+    AdminCustomersModule,
     AdminTripsModule,
     AdminEarningsModule,
     AdminPassengerRequestsModule,
     AdminTripGroupsModule,
     AdminPackagesModule,
     EarlyAccessModule,
+    WalletsModule,
+    RatingsModule,
+    PushModule,
     AnnouncementsModule,
     FaqModule,
     MapModule,

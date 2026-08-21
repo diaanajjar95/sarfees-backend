@@ -67,9 +67,12 @@ import { PassengerNotificationsService } from '../notifications/passenger/passen
 import { PassengerNotificationType } from '../shared/enums/passenger-notification-type.enum';
 import { AssignmentService } from '../assignment/assignment.service';
 import { Inject, forwardRef } from '@nestjs/common';
+import { WalletsService } from '../wallets/wallets.service';
+import { WalletConfigService } from '../wallets/wallet-config.service';
+import { WalletTransactionType } from '../shared/enums/wallet.enum';
+import { PackageReceiverNotifier } from '../push/package-receiver-notifier.service';
 
 const DEFAULT_OFFER_SECONDS = 45;
-const DEFAULT_COMMISSION_RATE = 0.15;
 const ESTIMATED_MINUTES_PER_STOP = 35;
 
 /**
@@ -113,6 +116,9 @@ export class DriverTripsService {
     private readonly passengerNotifications: PassengerNotificationsService,
     @Inject(forwardRef(() => AssignmentService))
     private readonly assignmentService: AssignmentService,
+    private readonly walletsService: WalletsService,
+    private readonly walletConfig: WalletConfigService,
+    private readonly receiverNotifier: PackageReceiverNotifier,
   ) {}
 
   // ═════════════════════════════════════════════════════════════
@@ -214,6 +220,17 @@ export class DriverTripsService {
       trip.acceptedAt = now;
       await mgr.save(trip);
 
+      // Accepting commits the driver: they go ON_TRIP immediately (not
+      // at start), so the matcher stops offering them other groups and
+      // ops sees them as booked. Every accepted-trip exit (start→
+      // complete, driver cancel zone 1, admin cancel, all-passengers-
+      // cancelled) restores ACTIVE.
+      await mgr.update(
+        Driver,
+        { id: driverId },
+        { status: DriverStatus.ON_TRIP },
+      );
+
       // Sync passenger TripRequests: assign driver, transition status
       if (tripRequestIds.length) {
         await mgr
@@ -238,6 +255,9 @@ export class DriverTripsService {
           .execute();
       }
     });
+
+    // Receiver WhatsApp (anonymous tracking link) — driver assigned.
+    void this.receiverNotifier.notifyByPackageIds(packageIds, 'assigned');
 
     // Build the manifest AFTER the transaction commits. buildManifest
     // reads through the default connection, which cannot see this
@@ -818,29 +838,28 @@ export class DriverTripsService {
       payload: { tripId: trip.id, stopId: stop.id },
     });
     // Package senders: collected vs not-found
-    const collectedSenderIds = await this.senderUserIdsForPackages(
-      result.collectedPackageIds,
-    );
-    await this.emitPassengerNotifications({
-      userIds: collectedSenderIds,
+    await this.emitPackageNotifications({
+      packageIds: result.collectedPackageIds,
       type: PassengerNotificationType.PACKAGE_PICKED_UP,
       titleEn: 'Package picked up',
       titleAr: 'تم استلام الطرد',
       bodyEn: 'The driver has picked up your package.',
       bodyAr: 'استلم السائق طردك وبدأ رحلة التوصيل.',
-      payload: { tripId: trip.id, stopId: stop.id },
+      extraPayload: { tripId: trip.id, stopId: stop.id },
     });
-    const notFoundSenderIds = await this.senderUserIdsForPackages(
-      result.notFoundPackageIds,
+    // Receiver WhatsApp — package on the way.
+    void this.receiverNotifier.notifyByPackageIds(
+      result.collectedPackageIds,
+      'picked_up',
     );
-    await this.emitPassengerNotifications({
-      userIds: notFoundSenderIds,
+    await this.emitPackageNotifications({
+      packageIds: result.notFoundPackageIds,
       type: PassengerNotificationType.PACKAGE_CANCELLED,
       titleEn: 'Package not collected',
       titleAr: 'لم يتم استلام الطرد',
       bodyEn: 'The driver could not collect your package and the delivery was cancelled.',
       bodyAr: 'تعذر على السائق استلام طردك وتم إلغاء الإرسال.',
-      payload: { tripId: trip.id, stopId: stop.id },
+      extraPayload: { tripId: trip.id, stopId: stop.id, reason: 'not_collected' },
     });
 
     return result.state;
@@ -1024,29 +1043,28 @@ export class DriverTripsService {
       payload: { tripId: trip.id, stopId: stop.id },
     });
     // Notify package senders: delivered vs failed
-    const deliveredSenderIds = await this.senderUserIdsForPackages(
-      result.deliveredPackageIds,
-    );
-    await this.emitPassengerNotifications({
-      userIds: deliveredSenderIds,
+    await this.emitPackageNotifications({
+      packageIds: result.deliveredPackageIds,
       type: PassengerNotificationType.PACKAGE_DELIVERED,
       titleEn: 'Package delivered',
       titleAr: 'تم تسليم الطرد',
       bodyEn: 'Your package has been delivered to the recipient.',
       bodyAr: 'تم تسليم طردك إلى المستلم.',
-      payload: { tripId: trip.id, stopId: stop.id },
+      extraPayload: { tripId: trip.id, stopId: stop.id },
     });
-    const failedSenderIds = await this.senderUserIdsForPackages(
-      result.failedPackageIds,
+    // Receiver WhatsApp — delivered confirmation.
+    void this.receiverNotifier.notifyByPackageIds(
+      result.deliveredPackageIds,
+      'delivered',
     );
-    await this.emitPassengerNotifications({
-      userIds: failedSenderIds,
+    await this.emitPackageNotifications({
+      packageIds: result.failedPackageIds,
       type: PassengerNotificationType.PACKAGE_CANCELLED,
       titleEn: 'Package delivery failed',
       titleAr: 'فشل تسليم الطرد',
       bodyEn: 'The driver was unable to deliver your package. Please contact support.',
       bodyAr: 'تعذر على السائق تسليم طردك. يُرجى التواصل مع الدعم.',
-      payload: { tripId: trip.id, stopId: stop.id },
+      extraPayload: { tripId: trip.id, stopId: stop.id, reason: 'delivery_failed' },
     });
 
     return result.state;
@@ -1081,17 +1099,21 @@ export class DriverTripsService {
       );
     }
 
-    return this.dataSource.transaction(async (mgr) => {
+    const completion = await this.dataSource.transaction(async (mgr) => {
       const now = new Date();
       const totalCashCollected = Number(trip.totalCashCollected);
       const commissionRate = Number(trip.commissionRate);
+      // Wallet model: commission is charged on the trip's TOTAL price
+      // (what was booked), not on what the driver managed to collect.
       const commissionAmount =
-        Math.round(totalCashCollected * commissionRate * 100) / 100;
+        Math.round(Number(trip.totalCashExpected) * commissionRate * 100) /
+        100;
       const netEarnings =
         Math.round((totalCashCollected - commissionAmount) * 100) / 100;
 
       trip.status = DriverTripStatus.COMPLETED;
       trip.completedAt = now;
+      trip.commissionAmount = commissionAmount;
       trip.netEarnings = netEarnings;
       await mgr.save(trip);
 
@@ -1107,14 +1129,14 @@ export class DriverTripsService {
         [trip.id, now],
       );
 
-      // Driver returns to inactive (must re-activate for next session per spec)
-      // and accumulates the platform's commission as outstanding balance.
+      // Driver returns to ACTIVE and keeps their session (location,
+      // preferences), so the matcher can offer the next trip right away.
+      // Exception — going-home auto-offline (master spec §9.6): a
+      // going-home driver who just arrived in their home city is locked
+      // offline until the configured day boundary (default: local
+      // midnight), and their session is cleared.
       const driver = await mgr.findOne(Driver, { where: { id: driverId } });
       if (driver) {
-        // Going-home auto-offline (master spec §9.6): if the driver was
-        // in going-home mode and this trip's destination matches their
-        // home city, they get locked offline until the configured day
-        // boundary (default: local midnight).
         const goingHomeCompleted =
           driver.prefGoingHome &&
           driver.homeCity != null &&
@@ -1122,21 +1144,37 @@ export class DriverTripsService {
             (trip.destinationCity ?? '').toLowerCase();
         if (goingHomeCompleted) {
           driver.goingHomeOfflineUntil = nextLocalMidnight();
+          driver.status = DriverStatus.INACTIVE;
+          driver.prefDestinationCity = null as unknown as string;
+          driver.prefTripTypes = null as unknown as string[];
+          driver.prefGoingHome = false;
+          driver.prefMinPassengers = null as unknown as number;
+          driver.prefActivatedAt = null as unknown as Date;
+          driver.prefLocationLat = null as unknown as number;
+          driver.prefLocationLng = null as unknown as number;
+        } else {
+          driver.status = DriverStatus.ACTIVE;
         }
-
-        driver.status = DriverStatus.INACTIVE;
         driver.totalTrips = (driver.totalTrips ?? 0) + 1;
-        driver.outstandingBalance =
-          Number(driver.outstandingBalance) + commissionAmount;
-        // Clear session preferences on auto-deactivate
-        driver.prefDestinationCity = null as unknown as string;
-        driver.prefTripTypes = null as unknown as string[];
-        driver.prefGoingHome = false;
-        driver.prefMinPassengers = null as unknown as number;
-        driver.prefActivatedAt = null as unknown as Date;
-        driver.prefLocationLat = null as unknown as number;
-        driver.prefLocationLng = null as unknown as number;
         await mgr.save(driver);
+      }
+
+      // Deduct the commission from the prepaid wallet — row-locked,
+      // ledgered, inside this same transaction. Negative balances are
+      // allowed here (the trip already ran); the matcher simply stops
+      // offering until the driver tops up.
+      let walletBalanceAfter = 0;
+      if (commissionAmount > 0) {
+        const walletResult = await this.walletsService.applyTransaction(mgr, {
+          driverId,
+          type: WalletTransactionType.COMMISSION,
+          amount: -commissionAmount,
+          driverTripId: trip.id,
+          note: `Commission ${(commissionRate * 100).toFixed(1)}% of ${Number(trip.totalCashExpected).toFixed(2)} JD trip total`,
+        });
+        walletBalanceAfter = walletResult.newBalance;
+      } else if (driver) {
+        walletBalanceAfter = Number(driver.walletBalance);
       }
 
       const passengersServed = stops.reduce(
@@ -1165,15 +1203,6 @@ export class DriverTripsService {
         ? Math.round((now.getTime() - trip.startedAt.getTime()) / 60000)
         : 0;
 
-      // Emit earnings notification for the driver's notifications screen
-      await this.notifications.emit({
-        driverId,
-        type: DriverNotificationType.EARNINGS_RECORDED,
-        title: 'Trip earnings recorded',
-        body: `Net earnings of ${netEarnings.toFixed(2)} JD have been recorded for ${trip.originCity} → ${trip.destinationCity}.`,
-        payload: { tripId: trip.id, netEarnings },
-      });
-
       return {
         tripId: trip.id,
         route: `${trip.originCity} → ${trip.destinationCity}`,
@@ -1183,10 +1212,60 @@ export class DriverTripsService {
         totalCashCollected,
         commissionRate,
         commissionAmount,
+        commissionDeducted: commissionAmount,
         netEarnings,
+        walletBalance: walletBalanceAfter,
         outstandingBalance: driver ? Number(driver.outstandingBalance) : 0,
       };
     });
+
+    // Post-commit: notifications only after the money transaction has
+    // committed. An emit inside the transaction inserts a row whose
+    // driver FK needs a key-share lock on the driver row — which our
+    // open transaction blocks, deadlocking complete() against itself.
+    await this.notifications.emit({
+      driverId,
+      type: DriverNotificationType.EARNINGS_RECORDED,
+      title: 'Trip earnings recorded',
+      body: `Net earnings of ${completion.netEarnings.toFixed(2)} JD have been recorded for ${completion.route}.`,
+      payload: { tripId: completion.tripId, netEarnings: completion.netEarnings },
+    });
+
+    // Nudge each served passenger to rate their driver (optional —
+    // per product the rating is never mandatory).
+    const servedRequests = await this.tripRequestsRepo
+      .createQueryBuilder('r')
+      .innerJoinAndSelect('r.passenger', 'p')
+      .innerJoin('r.tripGroup', 'g')
+      .where('g."driverTripId" = :tripId', { tripId: completion.tripId })
+      .andWhere('r.status = :done', { done: TripStatus.COMPLETED })
+      .getMany();
+    for (const r of servedRequests) {
+      if (!r.passenger) continue;
+      await this.passengerNotifications.emit({
+        userId: r.passenger.id,
+        type: PassengerNotificationType.RATE_YOUR_TRIP,
+        titleEn: 'How was your trip?',
+        titleAr: 'كيف كانت رحلتك؟',
+        bodyEn: 'Rate your driver — it takes a second and helps keep quality high.',
+        bodyAr: 'قيّم سائقك — تستغرق لحظة وتساعدنا في الحفاظ على الجودة.',
+        payload: { tripRequestId: r.id, tripId: completion.tripId },
+      });
+    }
+
+    // Warn the driver if the deduction left the wallet under the
+    // threshold (reads committed state; cooldown-deduped).
+    const walletCfg = await this.walletConfig.getConfig();
+    if (completion.walletBalance < Number(walletCfg.lowBalanceThresholdJod)) {
+      const freshDriver = await this.driversRepo.findOne({
+        where: { id: driverId },
+      });
+      if (freshDriver) {
+        await this.walletsService.maybeNotifyLowBalance(freshDriver);
+      }
+    }
+
+    return completion;
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -1310,9 +1389,8 @@ export class DriverTripsService {
         'ألغى السائق رحلتك. سنحاول العثور على سائق آخر لك قريبًا.',
       payload: { tripId: trip.id, zone },
     });
-    const senderUserIds = await this.senderUserIdsForPackages(packageIds);
-    await this.emitPassengerNotifications({
-      userIds: senderUserIds,
+    await this.emitPackageNotifications({
+      packageIds,
       type: PassengerNotificationType.PACKAGE_CANCELLED,
       titleEn: 'Package delivery cancelled',
       titleAr: 'تم إلغاء توصيل الطرد',
@@ -1320,7 +1398,7 @@ export class DriverTripsService {
         'The driver cancelled the trip carrying your package. We will reassign it shortly.',
       bodyAr:
         'ألغى السائق الرحلة التي تحمل طردك. سنعيد تعيينه قريبًا.',
-      payload: { tripId: trip.id, zone },
+      extraPayload: { tripId: trip.id, zone, reason: 'driver_cancelled' },
     });
 
     // Restart the cascade for the linked TripGroup so a new driver
@@ -1448,15 +1526,14 @@ export class DriverTripsService {
       bodyAr: 'ألغى فريق دعم سرفيس رحلتك. يرجى الحجز مرة أخرى أو التواصل مع الدعم.',
       payload: { tripId: trip.id, byAdmin: true },
     });
-    const senderUserIds = await this.senderUserIdsForPackages(packageIds);
-    await this.emitPassengerNotifications({
-      userIds: senderUserIds,
+    await this.emitPackageNotifications({
+      packageIds,
       type: PassengerNotificationType.PACKAGE_CANCELLED,
       titleEn: 'Package delivery cancelled by Sarfees',
       titleAr: 'قامت سرفيس بإلغاء توصيل الطرد',
       bodyEn: 'Sarfees support cancelled the trip carrying your package. Please rebook or contact support.',
       bodyAr: 'ألغى فريق دعم سرفيس الرحلة التي تحمل طردك. يرجى إعادة الحجز أو التواصل مع الدعم.',
-      payload: { tripId: trip.id, byAdmin: true },
+      extraPayload: { tripId: trip.id, byAdmin: true, reason: 'admin_cancelled' },
     });
 
     this.logger.log(
@@ -1474,6 +1551,10 @@ export class DriverTripsService {
       where: { id: dto.driverId },
     });
     if (!driver) throw new NotFoundException('Driver not found');
+
+    // Snapshot the platform commission % onto this trip. Editing the
+    // wallet config later never rewrites already-created trips.
+    const commissionFraction = await this.walletConfig.commissionFraction();
 
     if (
       dto.type === DriverTripType.WOMEN_ONLY &&
@@ -1534,7 +1615,7 @@ export class DriverTripsService {
         currentStopIndex: 0,
         totalCashExpected,
         totalCashCollected: 0,
-        commissionRate: dto.commissionRate ?? DEFAULT_COMMISSION_RATE,
+        commissionRate: dto.commissionRate ?? commissionFraction,
         offeredAt: now,
         offerExpiresAt: new Date(now.getTime() + offerSeconds * 1000),
       });
@@ -1725,6 +1806,46 @@ export class DriverTripsService {
     return rows
       .map((r) => r.passenger?.id)
       .filter((id): id is number => typeof id === 'number');
+  }
+
+  /**
+   * One notification PER PACKAGE to its sender — the payload always
+   * carries `packageId` so the app can deep-link straight to the
+   * package screen (GET /packages/{id}/status). Extra payload keys
+   * (tripId, stopId, zone, byAdmin) are merged in.
+   */
+  private async emitPackageNotifications(input: {
+    packageIds: number[];
+    type: PassengerNotificationType;
+    titleEn: string;
+    titleAr: string;
+    bodyEn: string;
+    bodyAr: string;
+    extraPayload?: Record<string, unknown>;
+  }): Promise<void> {
+    if (!input.packageIds.length) return;
+    const rows = await this.packagesRepo.find({
+      where: { id: In(input.packageIds) },
+      relations: ['sender'],
+    });
+    for (const pkg of rows) {
+      if (typeof pkg.sender?.id !== 'number') continue;
+      try {
+        await this.passengerNotifications.emit({
+          userId: pkg.sender.id,
+          type: input.type,
+          titleEn: input.titleEn,
+          titleAr: input.titleAr,
+          bodyEn: input.bodyEn,
+          bodyAr: input.bodyAr,
+          payload: { packageId: pkg.id, ...input.extraPayload },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `package notification failed for pkg #${pkg.id}: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
   }
 
   /** Resolve sender user IDs for a set of PackageDelivery IDs. */

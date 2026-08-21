@@ -3,7 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Between, Repository } from 'typeorm';
 import { I18nContext } from 'nestjs-i18n';
 import { Driver } from './driver.entity';
-import { DriverTrip } from '../driver-trips/entities/driver-trip.entity';
+import {
+  tripCommission,
+  DriverTrip,
+} from '../driver-trips/entities/driver-trip.entity';
 import { DriverTripStop } from '../driver-trips/entities/driver-trip-stop.entity';
 import { DriverTripStatus } from '../shared/enums/driver-trip-status.enum';
 import { StopPassengerRole, StopPassengerStatus } from '../shared/enums/stop-passenger-status.enum';
@@ -120,9 +123,7 @@ export class EarningsService {
     });
 
     const cashCollected = Number(trip.totalCashCollected);
-    const commissionRate = Number(trip.commissionRate);
-    const commission =
-      Math.round(cashCollected * commissionRate * 100) / 100;
+    const commission = tripCommission(trip);
     const net = Math.round((cashCollected - commission) * 100) / 100;
 
     return {
@@ -190,8 +191,7 @@ export class EarningsService {
     let commission = 0;
     for (const t of trips) {
       const c = Number(t.totalCashCollected);
-      const r = Number(t.commissionRate);
-      const com = Math.round(c * r * 100) / 100;
+      const com = tripCommission(t);
       cash += c;
       commission += com;
     }
@@ -233,8 +233,7 @@ export class EarningsService {
       0,
     );
     const cashCollected = Number(trip.totalCashCollected);
-    const commissionRate = Number(trip.commissionRate);
-    const commission = Math.round(cashCollected * commissionRate * 100) / 100;
+    const commission = tripCommission(trip);
     return {
       tripId: trip.id,
       route: `${trip.originCity} → ${trip.destinationCity}`,

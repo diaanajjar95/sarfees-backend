@@ -38,13 +38,13 @@ const TYPE_OPTIONS: { value: '' | DriverTripType; label: string }[] = [
 ];
 
 const STATUS_COLOR: Record<string, { fg: string; border: string }> = {
-  offered: { fg: '#FABE2C', border: 'rgba(250,190,44,0.35)' },
-  accepted: { fg: '#FABE2C', border: 'rgba(250,190,44,0.35)' },
+  offered: { fg: '#B57E0A', border: 'rgba(250,190,44,0.35)' },
+  accepted: { fg: '#B57E0A', border: 'rgba(250,190,44,0.35)' },
   in_progress: { fg: '#2E7D32', border: 'rgba(46,125,50,0.35)' },
   completed: { fg: '#4CAF50', border: 'rgba(76,175,80,0.35)' },
   cancelled: { fg: '#C62828', border: 'rgba(198,40,40,0.35)' },
-  expired: { fg: '#9090A0', border: 'rgba(255,255,255,0.10)' },
-  declined: { fg: '#9090A0', border: 'rgba(255,255,255,0.10)' },
+  expired: { fg: '#9E9E9E', border: 'rgba(255,255,255,0.10)' },
+  declined: { fg: '#9E9E9E', border: 'rgba(255,255,255,0.10)' },
 };
 
 export default async function TripsListPage({ searchParams }: PageProps) {

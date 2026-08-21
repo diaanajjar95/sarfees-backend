@@ -12,6 +12,7 @@ import { TripRequest } from '../trips/entities/trip-request.entity';
 import { AssignmentService } from './assignment.service';
 import { EscalationCase } from './entities/escalation-case.entity';
 import { TripOfferHistory } from './entities/trip-offer-history.entity';
+import { WalletsModule } from '../wallets/wallets.module';
 
 /**
  * Global — MatchingSweeperService fires the cascade and
@@ -39,6 +40,7 @@ import { TripOfferHistory } from './entities/trip-offer-history.entity';
     forwardRef(() => DriverTripsModule),
     DriverNotificationsModule,
     PassengerNotificationsModule,
+    WalletsModule,
   ],
   providers: [AssignmentService],
   exports: [AssignmentService, TypeOrmModule],
