@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { PassportModule } from '@nestjs/passport';
 import { WalletsModule } from '../wallets/wallets.module';
 import { Driver } from './driver.entity';
+import { City } from '../cities/city.entity';
 import { DriversService } from './drivers.service';
 import { EarningsService } from './earnings.service';
 import { DriversController } from './drivers.controller';
@@ -20,6 +21,7 @@ import { AnnouncementsModule } from '../announcements/announcements.module';
   imports: [
     TypeOrmModule.forFeature([
       Driver,
+      City,
       DriverTrip,
       DriverTripStop,
       DriverTripStopPassenger,

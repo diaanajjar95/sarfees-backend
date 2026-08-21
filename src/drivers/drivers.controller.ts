@@ -68,6 +68,20 @@ export class DriversController {
   }
 
   @ApiOperation({
+    summary: 'Options for the go-online sheet',
+    description:
+      'Everything the driver can choose when activating: destination ' +
+      'cities (bilingual, null = Any), trip types (women-only appears ' +
+      'only for female drivers), min-passenger options, going-home ' +
+      'availability (locked until midnight after a going-home arrival), ' +
+      'and the location requirement. Render this, then POST /drivers/activate.',
+  })
+  @Get('preferences')
+  preferences(@Req() req: Request) {
+    return this.driversService.getActivationPreferences(this.driverId(req));
+  }
+
+  @ApiOperation({
     summary: 'Activate session with preferences (S-05)',
     description:
       'Sets the driver to ACTIVE and stores session preferences. Captures one-time GPS for trip matching.',

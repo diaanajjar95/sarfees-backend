@@ -18,6 +18,7 @@ import {
 } from 'typeorm';
 import { I18nContext } from 'nestjs-i18n';
 import { Driver } from './driver.entity';
+import { City } from '../cities/city.entity';
 import { DriverDocument } from './documents/driver-document.entity';
 import { DriverStatus } from '../shared/enums/driver-status.enum';
 import { DriverSuspensionCategory } from '../shared/enums/driver-suspension-category.enum';
@@ -75,6 +76,8 @@ export class DriversService {
     private readonly stopPackagesRepository: Repository<DriverTripStopPackage>,
     @InjectRepository(DriverLocation)
     private readonly driverLocationRepository: Repository<DriverLocation>,
+    @InjectRepository(City)
+    private readonly citiesRepository: Repository<City>,
     @InjectRepository(DriverDocument)
     private readonly driverDocumentsRepository: Repository<DriverDocument>,
     private readonly announcementsService: AnnouncementsService,
@@ -615,6 +618,84 @@ export class DriversService {
   }
 
   // ─── S-05 Activate ─────────────────────────────────────────
+
+  /**
+   * Options for the go-online sheet — everything the driver can choose
+   * when activating (S-05). The app renders this, then submits the
+   * selection to POST /drivers/activate.
+   */
+  async getActivationPreferences(driverId: number) {
+    const driver = await this.driversRepository.findOne({
+      where: { id: driverId },
+    });
+    if (!driver) throw new NotFoundException('Driver not found');
+
+    const cities = await this.citiesRepository.find({
+      order: { nameEn: 'ASC' },
+    });
+
+    const tripTypes = [
+      {
+        value: 'mixed',
+        labelEn: 'Mixed (passengers + packages)',
+        labelAr: 'مختلط (ركاب وطرود)',
+      },
+      { value: 'shared', labelEn: 'Shared rides', labelAr: 'رحلات مشتركة' },
+      {
+        value: 'packages_only',
+        labelEn: 'Packages only',
+        labelAr: 'طرود فقط',
+      },
+      // Women-only is shown only to female drivers — male drivers can
+      // still be assigned women-only trips as the §9.4 fallback, but
+      // they never opt into them.
+      ...(driver.gender?.toLowerCase() === 'female'
+        ? [
+            {
+              value: 'women_only',
+              labelEn: 'Women-only trips',
+              labelAr: 'رحلات للنساء فقط',
+            },
+          ]
+        : []),
+    ];
+
+    const goingHomeLocked =
+      driver.goingHomeOfflineUntil != null &&
+      driver.goingHomeOfflineUntil.getTime() > Date.now();
+
+    return {
+      destinationCities: [
+        // null value = "Any Destination" — send destinationCity omitted.
+        { value: null, nameEn: 'Any Destination', nameAr: 'أي وجهة' },
+        ...cities.map((c) => ({
+          value: c.nameEn,
+          nameEn: c.nameEn,
+          nameAr: c.nameAr,
+        })),
+      ],
+      tripTypes,
+      minPassengers: [
+        { value: null, labelEn: 'Any', labelAr: 'أي عدد' },
+        { value: 1, labelEn: '1+', labelAr: '+1' },
+        { value: 2, labelEn: '2+', labelAr: '+2' },
+        { value: 3, labelEn: '3+', labelAr: '+3' },
+      ],
+      goingHome: {
+        available: !!driver.homeCity && !goingHomeLocked,
+        homeCity: driver.homeCity ?? null,
+        lockedUntil: goingHomeLocked ? driver.goingHomeOfflineUntil : null,
+      },
+      location: {
+        required: true,
+        hint:
+          'Send currentLocationLat/Lng with activate, or call ' +
+          'POST /drivers/me/location right after — the matcher skips ' +
+          'drivers with no location snapshot.',
+      },
+    };
+  }
+
   async activate(
     driverId: number,
     dto: ActivatePreferencesDto,
