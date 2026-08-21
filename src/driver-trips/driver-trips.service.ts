@@ -838,34 +838,28 @@ export class DriverTripsService {
       payload: { tripId: trip.id, stopId: stop.id },
     });
     // Package senders: collected vs not-found
-    const collectedSenderIds = await this.senderUserIdsForPackages(
-      result.collectedPackageIds,
-    );
-    await this.emitPassengerNotifications({
-      userIds: collectedSenderIds,
+    await this.emitPackageNotifications({
+      packageIds: result.collectedPackageIds,
       type: PassengerNotificationType.PACKAGE_PICKED_UP,
       titleEn: 'Package picked up',
       titleAr: 'تم استلام الطرد',
       bodyEn: 'The driver has picked up your package.',
       bodyAr: 'استلم السائق طردك وبدأ رحلة التوصيل.',
-      payload: { tripId: trip.id, stopId: stop.id },
+      extraPayload: { tripId: trip.id, stopId: stop.id },
     });
     // Receiver WhatsApp — package on the way.
     void this.receiverNotifier.notifyByPackageIds(
       result.collectedPackageIds,
       'picked_up',
     );
-    const notFoundSenderIds = await this.senderUserIdsForPackages(
-      result.notFoundPackageIds,
-    );
-    await this.emitPassengerNotifications({
-      userIds: notFoundSenderIds,
+    await this.emitPackageNotifications({
+      packageIds: result.notFoundPackageIds,
       type: PassengerNotificationType.PACKAGE_CANCELLED,
       titleEn: 'Package not collected',
       titleAr: 'لم يتم استلام الطرد',
       bodyEn: 'The driver could not collect your package and the delivery was cancelled.',
       bodyAr: 'تعذر على السائق استلام طردك وتم إلغاء الإرسال.',
-      payload: { tripId: trip.id, stopId: stop.id },
+      extraPayload: { tripId: trip.id, stopId: stop.id, reason: 'not_collected' },
     });
 
     return result.state;
@@ -1049,34 +1043,28 @@ export class DriverTripsService {
       payload: { tripId: trip.id, stopId: stop.id },
     });
     // Notify package senders: delivered vs failed
-    const deliveredSenderIds = await this.senderUserIdsForPackages(
-      result.deliveredPackageIds,
-    );
-    await this.emitPassengerNotifications({
-      userIds: deliveredSenderIds,
+    await this.emitPackageNotifications({
+      packageIds: result.deliveredPackageIds,
       type: PassengerNotificationType.PACKAGE_DELIVERED,
       titleEn: 'Package delivered',
       titleAr: 'تم تسليم الطرد',
       bodyEn: 'Your package has been delivered to the recipient.',
       bodyAr: 'تم تسليم طردك إلى المستلم.',
-      payload: { tripId: trip.id, stopId: stop.id },
+      extraPayload: { tripId: trip.id, stopId: stop.id },
     });
     // Receiver WhatsApp — delivered confirmation.
     void this.receiverNotifier.notifyByPackageIds(
       result.deliveredPackageIds,
       'delivered',
     );
-    const failedSenderIds = await this.senderUserIdsForPackages(
-      result.failedPackageIds,
-    );
-    await this.emitPassengerNotifications({
-      userIds: failedSenderIds,
+    await this.emitPackageNotifications({
+      packageIds: result.failedPackageIds,
       type: PassengerNotificationType.PACKAGE_CANCELLED,
       titleEn: 'Package delivery failed',
       titleAr: 'فشل تسليم الطرد',
       bodyEn: 'The driver was unable to deliver your package. Please contact support.',
       bodyAr: 'تعذر على السائق تسليم طردك. يُرجى التواصل مع الدعم.',
-      payload: { tripId: trip.id, stopId: stop.id },
+      extraPayload: { tripId: trip.id, stopId: stop.id, reason: 'delivery_failed' },
     });
 
     return result.state;
@@ -1401,9 +1389,8 @@ export class DriverTripsService {
         'ألغى السائق رحلتك. سنحاول العثور على سائق آخر لك قريبًا.',
       payload: { tripId: trip.id, zone },
     });
-    const senderUserIds = await this.senderUserIdsForPackages(packageIds);
-    await this.emitPassengerNotifications({
-      userIds: senderUserIds,
+    await this.emitPackageNotifications({
+      packageIds,
       type: PassengerNotificationType.PACKAGE_CANCELLED,
       titleEn: 'Package delivery cancelled',
       titleAr: 'تم إلغاء توصيل الطرد',
@@ -1411,7 +1398,7 @@ export class DriverTripsService {
         'The driver cancelled the trip carrying your package. We will reassign it shortly.',
       bodyAr:
         'ألغى السائق الرحلة التي تحمل طردك. سنعيد تعيينه قريبًا.',
-      payload: { tripId: trip.id, zone },
+      extraPayload: { tripId: trip.id, zone, reason: 'driver_cancelled' },
     });
 
     // Restart the cascade for the linked TripGroup so a new driver
@@ -1539,15 +1526,14 @@ export class DriverTripsService {
       bodyAr: 'ألغى فريق دعم سرفيس رحلتك. يرجى الحجز مرة أخرى أو التواصل مع الدعم.',
       payload: { tripId: trip.id, byAdmin: true },
     });
-    const senderUserIds = await this.senderUserIdsForPackages(packageIds);
-    await this.emitPassengerNotifications({
-      userIds: senderUserIds,
+    await this.emitPackageNotifications({
+      packageIds,
       type: PassengerNotificationType.PACKAGE_CANCELLED,
       titleEn: 'Package delivery cancelled by Sarfees',
       titleAr: 'قامت سرفيس بإلغاء توصيل الطرد',
       bodyEn: 'Sarfees support cancelled the trip carrying your package. Please rebook or contact support.',
       bodyAr: 'ألغى فريق دعم سرفيس الرحلة التي تحمل طردك. يرجى إعادة الحجز أو التواصل مع الدعم.',
-      payload: { tripId: trip.id, byAdmin: true },
+      extraPayload: { tripId: trip.id, byAdmin: true, reason: 'admin_cancelled' },
     });
 
     this.logger.log(
@@ -1820,6 +1806,46 @@ export class DriverTripsService {
     return rows
       .map((r) => r.passenger?.id)
       .filter((id): id is number => typeof id === 'number');
+  }
+
+  /**
+   * One notification PER PACKAGE to its sender — the payload always
+   * carries `packageId` so the app can deep-link straight to the
+   * package screen (GET /packages/{id}/status). Extra payload keys
+   * (tripId, stopId, zone, byAdmin) are merged in.
+   */
+  private async emitPackageNotifications(input: {
+    packageIds: number[];
+    type: PassengerNotificationType;
+    titleEn: string;
+    titleAr: string;
+    bodyEn: string;
+    bodyAr: string;
+    extraPayload?: Record<string, unknown>;
+  }): Promise<void> {
+    if (!input.packageIds.length) return;
+    const rows = await this.packagesRepo.find({
+      where: { id: In(input.packageIds) },
+      relations: ['sender'],
+    });
+    for (const pkg of rows) {
+      if (typeof pkg.sender?.id !== 'number') continue;
+      try {
+        await this.passengerNotifications.emit({
+          userId: pkg.sender.id,
+          type: input.type,
+          titleEn: input.titleEn,
+          titleAr: input.titleAr,
+          bodyEn: input.bodyEn,
+          bodyAr: input.bodyAr,
+          payload: { packageId: pkg.id, ...input.extraPayload },
+        });
+      } catch (err) {
+        this.logger.warn(
+          `package notification failed for pkg #${pkg.id}: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
   }
 
   /** Resolve sender user IDs for a set of PackageDelivery IDs. */
