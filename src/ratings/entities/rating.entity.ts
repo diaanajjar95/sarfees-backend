@@ -12,26 +12,39 @@ import { Driver } from '../../drivers/driver.entity';
 import { User } from '../../users/user.entity';
 import { DriverTrip } from '../../driver-trips/entities/driver-trip.entity';
 import { TripRequest } from '../../trips/entities/trip-request.entity';
+import { PackageDelivery } from '../../packages/entities/package-delivery.entity';
 import { RaterType, RatingLevel } from '../../shared/enums/rating.enum';
 
 /**
- * One rating per completed trip-request per direction:
- *   raterType=passenger → the passenger rated the driver
- *   raterType=driver    → the driver rated that passenger
- * Ratings are optional; a `bad` rating requires a message.
+ * One rating per completed booking per direction. A rating anchors to
+ * EITHER a trip request (passenger ↔ driver) OR a package delivery
+ * (sender ↔ driver) — exactly one of the two refs is set:
+ *   raterType=passenger → the customer rated the driver
+ *   raterType=driver    → the driver rated that customer
+ * Ratings are optional; a `bad` rating requires a message. Postgres
+ * treats NULLs as distinct, so each unique pair only constrains its
+ * own booking kind.
  */
 @Entity('ratings')
 @Unique(['tripRequest', 'raterType'])
+@Unique(['packageDelivery', 'raterType'])
 export class Rating {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToOne(() => TripRequest, { nullable: false, onDelete: 'CASCADE' })
+  @ManyToOne(() => TripRequest, { nullable: true, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'tripRequestId' })
-  tripRequest: TripRequest;
+  tripRequest: TripRequest | null;
 
-  @Column()
-  tripRequestId: number;
+  @Column({ nullable: true })
+  tripRequestId: number | null;
+
+  @ManyToOne(() => PackageDelivery, { nullable: true, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'packageDeliveryId' })
+  packageDelivery: PackageDelivery | null;
+
+  @Column({ nullable: true })
+  packageDeliveryId: number | null;
 
   @ManyToOne(() => DriverTrip, { nullable: false })
   driverTrip: DriverTrip;

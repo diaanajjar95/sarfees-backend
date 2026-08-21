@@ -18,7 +18,8 @@ interface TripRow {
 
 interface RatingRow {
   id: number;
-  tripRequestId: number;
+  tripRequestId: number | null;
+  packageDeliveryId: number | null;
   driverName: string | null;
   level: string;
   value: number;
@@ -172,7 +173,10 @@ function RatingsCard({ title, rows, who }: { title: string; rows: RatingRow[]; w
               </span>
             </div>
             <div className="mt-0.5 text-xs" style={{ color: 'var(--color-sarfees-muted)' }}>
-              {who} {r.driverName ?? 'driver'} · trip request #{r.tripRequestId}
+              {who} {r.driverName ?? 'driver'} ·{' '}
+              {r.tripRequestId != null
+                ? `trip request #${r.tripRequestId}`
+                : `package #${r.packageDeliveryId}`}
             </div>
             {r.comment && (
               <p className="mt-1 rounded-lg px-3 py-2 text-xs" style={{ background: 'var(--color-sarfees-dark-3)', color: 'var(--color-sarfees-muted)' }}>

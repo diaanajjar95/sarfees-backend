@@ -38,3 +38,14 @@ export class RatePassengerDto extends SubmitRatingDto {
   @Min(1)
   passengerId: number;
 }
+
+export class RatePackageSenderDto extends SubmitRatingDto {
+  @ApiProperty({
+    example: 14,
+    description: 'packageDeliveryId from /ratables (kind: "sender")',
+  })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  packageDeliveryId: number;
+}

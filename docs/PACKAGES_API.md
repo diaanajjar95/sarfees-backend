@@ -153,3 +153,21 @@ present → package screen. Unknown `type` → open the notification list.
 - Sender flow: app shows the code → sender shares it with the receiver
   (the receiver's WhatsApp tracking message includes their link, and the
   handoff still requires the code).
+
+## 5. Rating a delivery
+
+Same 5-level system as trips (see RATINGS_API.md). Only after
+`DELIVERED`; optional; one rating per package per side; `bad` requires
+a `message`; 409 on repeat.
+
+- Sender rates the driver: `POST /packages/{id}/rate`
+  `{ "level": "excellent", "message": "..." }` — read back with
+  `GET /packages/{id}/rating` (null until rated).
+- On delivery the sender also receives a `rate_your_trip` push whose
+  payload carries `packageId` (no `tripRequestId`) — route it to the
+  package rate sheet.
+- Driver side: the post-trip ratables list
+  (`GET /drivers/trips/{tripId}/ratables`) now includes senders as
+  `{ "kind": "sender", "packageDeliveryId": … }` entries — rate them
+  with `POST /drivers/trips/{tripId}/rate-package`
+  `{ "packageDeliveryId": 14, "level": "good" }`.

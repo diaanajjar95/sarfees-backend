@@ -12,8 +12,10 @@ import { Driver } from '../drivers/driver.entity';
 import { User } from '../users/user.entity';
 import { DriverTrip } from '../driver-trips/entities/driver-trip.entity';
 import { TripRequest } from '../trips/entities/trip-request.entity';
+import { PackageDelivery } from '../packages/entities/package-delivery.entity';
 import { DriverTripStatus } from '../shared/enums/driver-trip-status.enum';
 import { TripStatus } from '../shared/enums/trip-status.enum';
+import { PackageStatus } from '../shared/enums/package-status.enum';
 import {
   RATING_VALUE,
   RaterType,
@@ -32,6 +34,8 @@ export class RatingsService {
     private readonly requestsRepo: Repository<TripRequest>,
     @InjectRepository(DriverTrip)
     private readonly tripsRepo: Repository<DriverTrip>,
+    @InjectRepository(PackageDelivery)
+    private readonly packagesRepo: Repository<PackageDelivery>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -83,6 +87,63 @@ export class RatingsService {
     });
   }
 
+  // ─── Package sender rates the driver ──────────────────────────
+
+  async ratePackageSenderSide(
+    userId: number,
+    packageDeliveryId: number,
+    level: RatingLevel,
+    message?: string,
+  ) {
+    this.requireMessageIfBad(level, message);
+
+    const pkg = await this.packagesRepo.findOne({
+      where: { id: packageDeliveryId },
+      relations: ['sender', 'tripGroup', 'tripGroup.assignedDriver'],
+    });
+    if (!pkg) throw new NotFoundException(this.t('trips.Not found'));
+    if (pkg.sender?.id !== userId) {
+      throw new ForbiddenException(this.t('trips.Not yours'));
+    }
+    if (pkg.status !== PackageStatus.DELIVERED) {
+      throw new BadRequestException(this.t('trips.Rate after completion'));
+    }
+    const driver = pkg.tripGroup?.assignedDriver;
+    const driverTripId = pkg.tripGroup?.driverTripId;
+    if (!driver || !driverTripId) {
+      throw new BadRequestException(this.t('trips.Rate after completion'));
+    }
+
+    return this.saveRating({
+      packageDeliveryId,
+      driverTripId,
+      raterType: RaterType.PASSENGER,
+      driverId: driver.id,
+      passengerId: userId,
+      level,
+      message,
+    });
+  }
+
+  /** The sender's own rating for a package delivery (or null). */
+  async getSenderPackageRating(userId: number, packageDeliveryId: number) {
+    const rating = await this.ratingsRepo.findOne({
+      where: {
+        packageDelivery: { id: packageDeliveryId },
+        raterType: RaterType.PASSENGER,
+        passenger: { id: userId },
+      },
+    });
+    return rating
+      ? {
+          level: rating.level,
+          value: rating.value,
+          comment: rating.message,
+          createdAt: rating.createdAt,
+        }
+      : null;
+  }
+
   // ─── Driver rates a passenger ─────────────────────────────────
 
   async rateDriverSide(
@@ -118,6 +179,49 @@ export class RatingsService {
     });
   }
 
+  // ─── Driver rates a package sender ────────────────────────────
+
+  async rateDriverSideForPackage(
+    driverId: number,
+    tripId: number,
+    packageDeliveryId: number,
+    level: RatingLevel,
+    message?: string,
+  ) {
+    this.requireMessageIfBad(level, message);
+
+    const trip = await this.tripsRepo.findOne({
+      where: { id: tripId, driver: { id: driverId } },
+    });
+    if (!trip) throw new NotFoundException(this.t('trips.Not found'));
+    if (trip.status !== DriverTripStatus.COMPLETED) {
+      throw new BadRequestException(this.t('trips.Rate after completion'));
+    }
+
+    const pkg = await this.packagesRepo.findOne({
+      where: { id: packageDeliveryId },
+      relations: ['sender', 'tripGroup'],
+    });
+    if (
+      !pkg ||
+      pkg.tripGroup?.driverTripId !== tripId ||
+      pkg.status !== PackageStatus.DELIVERED ||
+      typeof pkg.sender?.id !== 'number'
+    ) {
+      throw new NotFoundException(this.t('trips.Passenger not on trip'));
+    }
+
+    return this.saveRating({
+      packageDeliveryId,
+      driverTripId: tripId,
+      raterType: RaterType.DRIVER,
+      driverId,
+      passengerId: pkg.sender.id,
+      level,
+      message,
+    });
+  }
+
   /** Passengers on a completed trip the driver may still rate. */
   async listRatables(driverId: number, tripId: number) {
     const trip = await this.tripsRepo.findOne({
@@ -129,13 +233,40 @@ export class RatingsService {
     const existing = await this.ratingsRepo.find({
       where: { driverTrip: { id: tripId }, raterType: RaterType.DRIVER },
     });
-    const rated = new Set(existing.map((r) => r.passengerId));
+    const ratedPassengers = new Set(
+      existing.filter((r) => r.tripRequestId != null).map((r) => r.passengerId),
+    );
+    const ratedPackages = new Set(
+      existing
+        .map((r) => r.packageDeliveryId)
+        .filter((id): id is number => id != null),
+    );
 
-    return requests.map((r) => ({
-      passengerId: r.passenger.id,
-      name: `${r.passenger.firstName ?? ''} ${r.passenger.lastName ?? ''}`.trim(),
-      alreadyRated: rated.has(r.passenger.id),
-    }));
+    // Delivered packages on this trip — their senders are ratable too.
+    const packages = await this.packagesRepo
+      .createQueryBuilder('p')
+      .innerJoinAndSelect('p.sender', 's')
+      .innerJoin('p.tripGroup', 'g')
+      .where('g.driverTripId = :tripId', { tripId })
+      .andWhere('p.status = :done', { done: PackageStatus.DELIVERED })
+      .getMany();
+
+    return [
+      ...requests.map((r) => ({
+        kind: 'passenger' as const,
+        passengerId: r.passenger.id,
+        packageDeliveryId: null as number | null,
+        name: `${r.passenger.firstName ?? ''} ${r.passenger.lastName ?? ''}`.trim(),
+        alreadyRated: ratedPassengers.has(r.passenger.id),
+      })),
+      ...packages.map((p) => ({
+        kind: 'sender' as const,
+        passengerId: p.sender.id,
+        packageDeliveryId: p.id,
+        name: `${p.sender.firstName ?? ''} ${p.sender.lastName ?? ''}`.trim(),
+        alreadyRated: ratedPackages.has(p.id),
+      })),
+    ];
   }
 
   /** The passenger's own rating for a request (or null). */
@@ -181,7 +312,8 @@ export class RatingsService {
   }
 
   private async saveRating(input: {
-    tripRequestId: number;
+    tripRequestId?: number;
+    packageDeliveryId?: number;
     driverTripId: number;
     raterType: RaterType;
     driverId: number;
@@ -193,18 +325,31 @@ export class RatingsService {
 
     return this.dataSource.transaction(async (mgr) => {
       const existing = await mgr.findOne(Rating, {
-        where: {
-          tripRequest: { id: input.tripRequestId },
-          raterType: input.raterType,
-        },
+        where: input.tripRequestId != null
+          ? {
+              tripRequest: { id: input.tripRequestId },
+              raterType: input.raterType,
+            }
+          : {
+              packageDelivery: { id: input.packageDeliveryId },
+              raterType: input.raterType,
+            },
       });
       if (existing) {
         throw new ConflictException(this.t('trips.Already rated'));
       }
 
       const rating = mgr.create(Rating, {
-        tripRequestId: input.tripRequestId,
-        tripRequest: { id: input.tripRequestId } as TripRequest,
+        tripRequestId: input.tripRequestId ?? null,
+        tripRequest:
+          input.tripRequestId != null
+            ? ({ id: input.tripRequestId } as TripRequest)
+            : null,
+        packageDeliveryId: input.packageDeliveryId ?? null,
+        packageDelivery:
+          input.packageDeliveryId != null
+            ? ({ id: input.packageDeliveryId } as PackageDelivery)
+            : null,
         driverTrip: { id: input.driverTripId } as DriverTrip,
         raterType: input.raterType,
         driverId: input.driverId,
