@@ -14,7 +14,11 @@ import { AuthGuard } from '@nestjs/passport';
 import type { Request } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RatingsService } from './ratings.service';
-import { RatePassengerDto, SubmitRatingDto } from './dto/rating.dto';
+import {
+  RatePackageSenderDto,
+  RatePassengerDto,
+  SubmitRatingDto,
+} from './dto/rating.dto';
 
 @ApiTags('Ratings')
 @ApiBearerAuth()
@@ -53,6 +57,42 @@ export class RatingsController {
     return this.ratings.getPassengerRating(userId, id);
   }
 
+  // ─── Package sender side ──────────────────────────────────────
+
+  @ApiOperation({
+    summary: 'Rate the driver for a delivered package (optional)',
+    description:
+      'Same 5 levels; `bad` requires a message. One rating per package; ' +
+      '409 on repeat. Only after status DELIVERED.',
+  })
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(HttpStatus.CREATED)
+  @Post('packages/:id/rate')
+  ratePackageSender(
+    @Req() req: Request,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SubmitRatingDto,
+  ) {
+    const userId = (req.user as { userId: number }).userId;
+    return this.ratings.ratePackageSenderSide(
+      userId,
+      id,
+      dto.level,
+      dto.message,
+    );
+  }
+
+  @ApiOperation({ summary: "The sender's own rating for a package (or null)" })
+  @UseGuards(AuthGuard('jwt'))
+  @Get('packages/:id/rating')
+  getSenderPackageRating(
+    @Req() req: Request,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    const userId = (req.user as { userId: number }).userId;
+    return this.ratings.getSenderPackageRating(userId, id);
+  }
+
   // ─── Driver side ──────────────────────────────────────────────
 
   @ApiOperation({
@@ -84,6 +124,30 @@ export class RatingsController {
       driverId,
       id,
       dto.passengerId,
+      dto.level,
+      dto.message,
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Rate a package sender after closing the trip (optional)',
+    description:
+      'For `kind: "sender"` entries in the ratables list. Same 5 levels; ' +
+      '`bad` requires a message. One rating per package; 409 on repeat.',
+  })
+  @UseGuards(AuthGuard('jwt-driver'))
+  @HttpCode(HttpStatus.CREATED)
+  @Post('drivers/trips/:id/rate-package')
+  rateDriverPackage(
+    @Req() req: Request,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: RatePackageSenderDto,
+  ) {
+    const driverId = (req.user as { driverId: number }).driverId;
+    return this.ratings.rateDriverSideForPackage(
+      driverId,
+      id,
+      dto.packageDeliveryId,
       dto.level,
       dto.message,
     );

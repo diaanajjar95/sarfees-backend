@@ -2,8 +2,19 @@
 
 Base URL: `http://169.58.67.105` · Envelope: every response is `{ "code", "message", "data" }` · i18n errors via `Accept-Language: en|ar`
 
-Passengers and drivers rate each other after a completed trip. **Rating is
-always optional** — never block a screen on it.
+Passengers and drivers rate each other after a completed trip, and
+**package senders and drivers rate each other after a delivery** — the
+same 5 levels and rules everywhere. **Rating is always optional** —
+never block a screen on it.
+
+Package endpoints (mirrors of the trip ones):
+- Sender → driver: `POST /packages/{id}/rate` after `DELIVERED`;
+  read back `GET /packages/{id}/rating`. Nudge: `rate_your_trip` push
+  with `payload.packageId`.
+- Driver → sender: `GET /drivers/trips/{tripId}/ratables` entries now
+  carry `kind` (`"passenger"` | `"sender"`); for senders call
+  `POST /drivers/trips/{tripId}/rate-package` with
+  `{ packageDeliveryId, level, message? }`.
 
 ## The 5 levels
 

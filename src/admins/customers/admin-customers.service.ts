@@ -106,6 +106,7 @@ export class AdminCustomersService {
     const toRatingRow = (r: Rating) => ({
       id: r.id,
       tripRequestId: r.tripRequestId,
+      packageDeliveryId: r.packageDeliveryId,
       driverName: r.driver?.name ?? null,
       level: r.level,
       value: r.value,

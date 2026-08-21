@@ -1052,6 +1052,17 @@ export class DriverTripsService {
       bodyAr: 'تم تسليم طردك إلى المستلم.',
       extraPayload: { tripId: trip.id, stopId: stop.id },
     });
+    // Optional rating nudge — mirrors the passenger rate_your_trip flow;
+    // payload.packageId routes to POST /packages/{id}/rate.
+    await this.emitPackageNotifications({
+      packageIds: result.deliveredPackageIds,
+      type: PassengerNotificationType.RATE_YOUR_TRIP,
+      titleEn: 'How was your delivery?',
+      titleAr: 'كيف كانت خدمة التوصيل؟',
+      bodyEn: 'Rate your driver — it takes a second and helps keep quality high.',
+      bodyAr: 'قيّم سائقك — تستغرق لحظة وتساعدنا في الحفاظ على الجودة.',
+      extraPayload: { tripId: trip.id },
+    });
     // Receiver WhatsApp — delivered confirmation.
     void this.receiverNotifier.notifyByPackageIds(
       result.deliveredPackageIds,
