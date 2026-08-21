@@ -72,10 +72,45 @@ pick by app language. Driver rows carry a single `title`/`body`.
 | `trip_cancelled` | any cancellation (driver no-show marking included) | trip history |
 | `trip_delay_escalation` | nobody accepted by departure — ops working on it | trip screen |
 | `rate_your_trip` | trip completed — optional rating nudge | rating screen (`tripRequestId`) |
-| `package_picked_up` | sender: parcel collected (cash paid) | package detail |
-| `package_delivered` | sender: delivered against the code | package detail |
-| `package_cancelled` | sender: refused / not found / cancelled | package detail |
+| `package_picked_up` | sender: parcel collected (cash paid) | package detail (`packageId`) |
+| `package_delivered` | sender: delivered against the code | package detail (`packageId`) |
+| `package_cancelled` | sender: refused / not found / cancelled | package detail (`packageId`) |
 | `system_announcement` | ops broadcast | notification list |
+
+### 4.1 Package payload examples
+
+Every `package_*` push carries `packageId` — that is the deep-link key.
+Open the app's package screen and hydrate it from
+`GET /packages/{packageId}/status` (or `GET /packages/{packageId}` for
+full details). `tripId`/`stopId` are the driver-side references — useful
+for support tickets, not for navigation.
+
+```json
+{ "type": "package_picked_up",
+  "payload": "{\"packageId\":14,\"tripId\":98,\"stopId\":301}" }
+```
+
+```json
+{ "type": "package_delivered",
+  "payload": "{\"packageId\":14,\"tripId\":98,\"stopId\":304}" }
+```
+
+`package_cancelled` adds a `reason` telling the app which copy to show:
+
+```json
+{ "type": "package_cancelled",
+  "payload": "{\"packageId\":14,\"tripId\":98,\"reason\":\"driver_cancelled\"}" }
+```
+
+| `reason` | Meaning | Suggested CTA |
+|---|---|---|
+| `not_collected` | driver couldn't collect at pickup | rebook |
+| `delivery_failed` | receiver unreachable / refused | contact support |
+| `driver_cancelled` | driver cancelled the carrying trip — will be reassigned | none (auto-reassign) |
+| `admin_cancelled` | ops cancelled the carrying trip | rebook / support |
+
+Deep-link routing rule for the passenger app: `payload.tripRequestId`
+present → trip screens; `payload.packageId` present → package screen.
 
 ## 5. Driver notification types
 
