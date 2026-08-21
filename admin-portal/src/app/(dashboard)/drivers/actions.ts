@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { ApiError, apiFetch } from '@/lib/api';
+import { ApiError, apiFetch, apiUpload } from '@/lib/api';
 import type {
   CreateDriverPayload,
   DriverProfile,
@@ -131,4 +131,38 @@ export async function reinstateDriverAction(driverId: number): Promise<void> {
   });
   revalidatePath(`/drivers/${driverId}`);
   revalidatePath('/drivers');
+}
+
+export interface UploadDocumentResult {
+  ok: boolean;
+  error?: string;
+}
+
+export async function uploadDriverDocumentAction(
+  _prev: UploadDocumentResult | null,
+  formData: FormData,
+): Promise<UploadDocumentResult> {
+  const driverId = Number(formData.get('driverId'));
+  const file = formData.get('file');
+  if (!(file instanceof File) || file.size === 0)
+    return { ok: false, error: 'Choose a file first.' };
+
+  const upstream = new FormData();
+  upstream.set('file', file);
+  upstream.set('type', String(formData.get('type') ?? ''));
+  const documentNumber = String(formData.get('documentNumber') ?? '').trim();
+  if (documentNumber) upstream.set('documentNumber', documentNumber);
+  const issuedAt = String(formData.get('issuedAt') ?? '');
+  if (issuedAt) upstream.set('issuedAt', issuedAt);
+  const expiresAt = String(formData.get('expiresAt') ?? '');
+  if (expiresAt) upstream.set('expiresAt', expiresAt);
+
+  try {
+    await apiUpload(`/admin/drivers/${driverId}/documents`, upstream);
+  } catch (err) {
+    if (err instanceof ApiError) return { ok: false, error: err.message };
+    return { ok: false, error: 'Upload failed.' };
+  }
+  revalidatePath(`/drivers/${driverId}`);
+  return { ok: true };
 }
