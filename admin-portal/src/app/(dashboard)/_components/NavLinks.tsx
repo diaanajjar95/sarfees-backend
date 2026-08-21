@@ -15,6 +15,7 @@ import {
   Route,
   Sparkles,
   Users,
+  UsersRound,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -32,6 +33,7 @@ const NAV: NavEntry[] = [
   { href: '/groups', label: 'Trip groups', icon: Boxes },
   { href: '/packages', label: 'Packages', icon: Package },
   { href: '/drivers', label: 'Drivers', icon: Users },
+  { href: '/customers', label: 'Customers', icon: UsersRound },
   { href: '/trips', label: 'Trips', icon: Route },
   { href: '/earnings', label: 'Earnings', icon: DollarSign },
   { href: '/announcements', label: 'Announcements', icon: Megaphone },
