@@ -4,7 +4,7 @@ import { useActionState, useState } from 'react';
 import { CreditCard, Printer } from 'lucide-react';
 import { generateBatchAction, type BatchResult } from './actions';
 
-export function GenerateBatchForm() {
+export function GenerateBatchForm({ currency }: { currency: string }) {
   const [state, formAction, pending] = useActionState(generateBatchAction, null);
   const [copied, setCopied] = useState(false);
 
@@ -32,7 +32,7 @@ export function GenerateBatchForm() {
       </p>
       <form action={formAction} className="mt-3 flex flex-wrap items-end gap-3">
         <div>
-          <label className="field-label">Card value (JD)</label>
+          <label className="field-label">Card value ({currency})</label>
           <input name="amount" type="number" min={1} max={500} step={1} defaultValue={10} required className="input-field w-32" />
         </div>
         <div>
@@ -50,7 +50,7 @@ export function GenerateBatchForm() {
         <div className="mt-4 rounded-xl border p-4" style={{ borderColor: 'var(--color-sarfees-gold-light)', background: 'var(--color-sarfees-gold-surface)' }}>
           <div className="flex items-center justify-between">
             <div className="text-sm font-extrabold">
-              {state.codes.length} × {state.amount} JD — batch {state.batchId?.slice(0, 8)}
+              {state.codes.length} × {state.amount} {currency} — batch {state.batchId?.slice(0, 8)}
             </div>
             <div className="flex gap-2">
               <button type="button" onClick={copyAll} className="btn-secondary px-3 py-1.5 text-xs">

@@ -1,3 +1,4 @@
+import { getCurrencySymbol } from '@/lib/currency';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
@@ -9,6 +10,7 @@ interface PageProps {
 }
 
 export default async function BalancesPage({ searchParams }: PageProps) {
+  const cur = await getCurrencySymbol();
   const sp = await searchParams;
   const showAll = sp.all === '1';
   const page = Number(sp.page ?? 1);
@@ -81,7 +83,7 @@ export default async function BalancesPage({ searchParams }: PageProps) {
             className="mt-1 text-2xl font-extrabold"
             style={{ color: 'var(--color-sarfees-gold)' }}
           >
-            {resp.outstandingTotal.toFixed(2)} JD
+            {resp.outstandingTotal.toFixed(2)} {cur}
           </div>
         </div>
       )}
@@ -139,7 +141,7 @@ export default async function BalancesPage({ searchParams }: PageProps) {
                   <td className="px-5 py-3">{row.phoneNumber}</td>
                   <td className="px-5 py-3 text-right">{row.totalTrips}</td>
                   <td className="px-5 py-3 text-right font-semibold" style={{ color: 'var(--color-sarfees-gold)' }}>
-                    {row.outstandingBalance.toFixed(2)} JD
+                    {row.outstandingBalance.toFixed(2)} {cur}
                   </td>
                   <td className="px-5 py-3">
                     <SettleBalanceRow

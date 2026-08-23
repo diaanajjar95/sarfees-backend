@@ -5,11 +5,12 @@ import { useRouter } from 'next/navigation';
 import type { AdminTripRow } from '@/lib/types';
 
 interface Props {
+  currency: string;
   trip: AdminTripRow;
   statusColor: { fg: string; border: string };
 }
 
-export default function TripRow({ trip, statusColor }: Props) {
+export default function TripRow({ trip, statusColor, currency }: Props) {
   const router = useRouter();
   const detailHref = `/trips/${trip.id}`;
 
@@ -62,11 +63,11 @@ export default function TripRow({ trip, statusColor }: Props) {
         {new Date(trip.departureTime).toLocaleString()}
       </td>
       <td className="px-5 py-3 text-right">
-        {Number(trip.totalCashCollected).toFixed(2)} JD
+        {Number(trip.totalCashCollected).toFixed(2)} {currency}
       </td>
       <td className="px-5 py-3 text-right">
         {trip.netEarnings != null
-          ? `${Number(trip.netEarnings).toFixed(2)} JD`
+          ? `${Number(trip.netEarnings).toFixed(2)} ${currency}`
           : '—'}
       </td>
     </tr>

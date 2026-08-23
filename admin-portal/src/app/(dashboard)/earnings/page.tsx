@@ -1,3 +1,4 @@
+import { getCurrencySymbol } from '@/lib/currency';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
 import type {
@@ -16,6 +17,7 @@ const PERIODS: { value: EarningsPeriod; label: string }[] = [
 ];
 
 export default async function EarningsDashboardPage({ searchParams }: PageProps) {
+  const cur = await getCurrencySymbol();
   const sp = await searchParams;
   const period = sp.period ?? 'week';
 
@@ -72,15 +74,15 @@ export default async function EarningsDashboardPage({ searchParams }: PageProps)
           <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
             <Tile
               label="Cash collected"
-              value={`${data.kpi.totalCashCollected.toFixed(2)} JD`}
+              value={`${data.kpi.totalCashCollected.toFixed(2)} ${cur}`}
             />
             <Tile
               label="Commission earned"
-              value={`${data.kpi.totalCommission.toFixed(2)} JD`}
+              value={`${data.kpi.totalCommission.toFixed(2)} ${cur}`}
             />
             <Tile
               label="Net to drivers"
-              value={`${data.kpi.totalNetPaidToDrivers.toFixed(2)} JD`}
+              value={`${data.kpi.totalNetPaidToDrivers.toFixed(2)} ${cur}`}
             />
             <Tile label="Trips" value={data.kpi.tripCount} />
           </div>
@@ -89,7 +91,7 @@ export default async function EarningsDashboardPage({ searchParams }: PageProps)
             <Tile label="Active drivers right now" value={data.kpi.activeDrivers} />
             <Tile
               label="Outstanding (all drivers)"
-              value={`${data.kpi.outstandingTotal.toFixed(2)} JD`}
+              value={`${data.kpi.outstandingTotal.toFixed(2)} ${cur}`}
               hint={
                 <Link
                   href="/earnings/balances"
@@ -141,10 +143,10 @@ export default async function EarningsDashboardPage({ searchParams }: PageProps)
                       <td className="px-5 py-3 font-semibold">{r.city}</td>
                       <td className="px-5 py-3 text-right">{r.tripCount}</td>
                       <td className="px-5 py-3 text-right">
-                        {r.cashCollected.toFixed(2)} JD
+                        {r.cashCollected.toFixed(2)} {cur}
                       </td>
                       <td className="px-5 py-3 text-right">
-                        {r.commission.toFixed(2)} JD
+                        {r.commission.toFixed(2)} {cur}
                       </td>
                     </tr>
                   ))}
