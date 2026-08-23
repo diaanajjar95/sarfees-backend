@@ -1,3 +1,4 @@
+import { getCurrencySymbol } from '@/lib/currency';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronLeft, Pencil } from 'lucide-react';
@@ -40,6 +41,7 @@ interface PageProps {
 }
 
 export default async function DriverDetailPage({ params }: PageProps) {
+  const cur = await getCurrencySymbol();
   const { id } = await params;
   const driverId = Number(id);
   if (!Number.isFinite(driverId)) notFound();
@@ -164,7 +166,7 @@ export default async function DriverDetailPage({ params }: PageProps) {
           <Row label="Cancelled trips" value={driver.cancelledTripCount} />
           <Row
             label="Outstanding balance"
-            value={`${Number(driver.outstandingBalance).toFixed(2)} JD`}
+            value={`${Number(driver.outstandingBalance).toFixed(2)} ${cur}`}
           />
         </DataCard>
       </div>
@@ -192,7 +194,7 @@ export default async function DriverDetailPage({ params }: PageProps) {
           <div className="mt-3 flex flex-wrap items-baseline gap-x-8 gap-y-2">
             <div>
               <div className="text-2xl font-extrabold">
-                {Number(wallet.balance).toFixed(2)} JD
+                {Number(wallet.balance).toFixed(2)} {cur}
               </div>
               <div className="text-xs" style={{ color: 'var(--color-sarfees-soft)' }}>
                 current balance
@@ -200,11 +202,11 @@ export default async function DriverDetailPage({ params }: PageProps) {
             </div>
             <div className="text-sm" style={{ color: 'var(--color-sarfees-muted)' }}>
               Commission {Number(wallet.commissionPercent)}% of trip total ·
-              warning below {Number(wallet.lowBalanceThreshold).toFixed(2)} JD
+              warning below {Number(wallet.lowBalanceThreshold).toFixed(2)} {cur}
             </div>
           </div>
 
-          {canCredit && <WalletCreditForm driverId={driver.id} />}
+          {canCredit && <WalletCreditForm driverId={driver.id} currency={cur} />}
 
           <div className="mt-4">
             {walletTx.length === 0 ? (
@@ -240,9 +242,9 @@ export default async function DriverDetailPage({ params }: PageProps) {
                         className="py-2 text-right font-semibold"
                         style={{ color: t.amount >= 0 ? '#2E7D32' : 'var(--color-sarfees-error)' }}
                       >
-                        {t.amount >= 0 ? '+' : ''}{Number(t.amount).toFixed(2)} JD
+                        {t.amount >= 0 ? '+' : ''}{Number(t.amount).toFixed(2)} {cur}
                       </td>
-                      <td className="py-2 text-right">{Number(t.balanceAfter).toFixed(2)} JD</td>
+                      <td className="py-2 text-right">{Number(t.balanceAfter).toFixed(2)} {cur}</td>
                       <td className="py-2 text-right" style={{ color: 'var(--color-sarfees-soft)' }}>
                         {fmtDateTime(t.createdAt)}
                       </td>
@@ -325,9 +327,9 @@ export default async function DriverDetailPage({ params }: PageProps) {
                     <td className="py-2">{t.type}</td>
                     <td className="py-2">{t.status.replace('_', ' ')}</td>
                     <td className="py-2">{fmtDateTime(t.departureTime)}</td>
-                    <td className="py-2 text-right">{Number(t.totalCashCollected).toFixed(2)} JD</td>
+                    <td className="py-2 text-right">{Number(t.totalCashCollected).toFixed(2)} {cur}</td>
                     <td className="py-2 text-right">
-                      {t.netEarnings != null ? `${Number(t.netEarnings).toFixed(2)} JD` : '—'}
+                      {t.netEarnings != null ? `${Number(t.netEarnings).toFixed(2)} ${cur}` : '—'}
                     </td>
                   </tr>
                 ))}

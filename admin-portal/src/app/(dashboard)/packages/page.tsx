@@ -1,3 +1,4 @@
+import { getCurrencySymbol } from '@/lib/currency';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
 import CancelWithReason from '../_components/CancelWithReason';
@@ -62,6 +63,7 @@ interface PageProps {
 }
 
 export default async function PackagesPage({ searchParams }: PageProps) {
+  const cur = await getCurrencySymbol();
   const sp = await searchParams;
   const status = sp.status ?? '';
   const page = Number(sp.page ?? 1);
@@ -230,7 +232,7 @@ export default async function PackagesPage({ searchParams }: PageProps) {
                     )}
                   </td>
                   <td className="px-5 py-3 whitespace-nowrap">
-                    {p.deliveryFee.toFixed(2)} JD
+                    {p.deliveryFee.toFixed(2)} {cur}
                   </td>
                   <td className="px-5 py-3">
                     <span

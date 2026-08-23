@@ -27,3 +27,23 @@ export async function updateWalletConfigAction(
   revalidatePath('/wallet-settings');
   return { ok: true };
 }
+
+export async function updateCurrencyAction(
+  _prev: SettingsResult | null,
+  formData: FormData,
+): Promise<SettingsResult> {
+  const currencyCode = String(formData.get('currencyCode') ?? '');
+  if (!['JOD', 'SYP'].includes(currencyCode))
+    return { ok: false, error: 'Pick a currency.' };
+  try {
+    await apiFetch('/admin/platform-config', {
+      method: 'PATCH',
+      body: { currencyCode },
+    });
+  } catch (err) {
+    if (err instanceof ApiError) return { ok: false, error: err.message };
+    return { ok: false, error: 'Update failed.' };
+  }
+  revalidatePath('/', 'layout');
+  return { ok: true };
+}

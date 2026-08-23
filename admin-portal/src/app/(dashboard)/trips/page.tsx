@@ -1,3 +1,4 @@
+import { getCurrencySymbol } from '@/lib/currency';
 import Link from 'next/link';
 import { Plus, Search } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
@@ -48,6 +49,7 @@ const STATUS_COLOR: Record<string, { fg: string; border: string }> = {
 };
 
 export default async function TripsListPage({ searchParams }: PageProps) {
+  const cur = await getCurrencySymbol();
   const sp = await searchParams;
   const status = sp.status ?? '';
   const type = sp.type ?? '';
@@ -162,7 +164,7 @@ export default async function TripsListPage({ searchParams }: PageProps) {
                 </tr>
               )}
               {resp.data.map((t) => (
-                <TripRow
+                <TripRow currency={cur}
                   key={t.id}
                   trip={t}
                   statusColor={STATUS_COLOR[t.status] ?? STATUS_COLOR.expired}

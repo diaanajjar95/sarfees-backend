@@ -1,3 +1,4 @@
+import { getCurrencySymbol } from '@/lib/currency';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
 import type {
@@ -33,6 +34,7 @@ const STATUS_COLOR: Record<string, { fg: string; border: string }> = {
 };
 
 export default async function PassengerRequestsListPage({ searchParams }: PageProps) {
+  const cur = await getCurrencySymbol();
   const sp = await searchParams;
   const status = sp.status ?? 'PENDING';
   const page = Number(sp.page ?? 1);
@@ -191,7 +193,7 @@ export default async function PassengerRequestsListPage({ searchParams }: PagePr
                     </td>
                     <td className="px-5 py-3 text-right">{r.seatsCount}</td>
                     <td className="px-5 py-3 text-right">
-                      {Number(r.totalFare).toFixed(2)} JD
+                      {Number(r.totalFare).toFixed(2)} {cur}
                     </td>
                     <td className="px-5 py-3">
                       {r.driverName ? (

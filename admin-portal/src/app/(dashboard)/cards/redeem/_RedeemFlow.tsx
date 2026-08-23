@@ -9,7 +9,7 @@ import {
 } from '../actions';
 
 /** Two-step redeem, telecom-shop style: phone → confirm name → code → done. */
-export default function RedeemFlow() {
+export default function RedeemFlow({ currency }: { currency: string }) {
   const [phone, setPhone] = useState('');
   const [lookup, lookupAction, lookingUp] = useActionState(lookupDriverAction, null);
   const [redeem, redeemAction, redeeming] = useActionState(redeemCardAction, null);
@@ -22,7 +22,7 @@ export default function RedeemFlow() {
       <div className="surface-card mx-auto max-w-md p-8 text-center">
         <CheckCircle2 size={44} className="mx-auto" style={{ color: '#2E7D32' }} />
         <h2 className="mt-3 text-xl font-extrabold">
-          {redeem.amount?.toFixed(2)} JD added
+          {redeem.amount?.toFixed(2)} {currency} added
         </h2>
         <p className="mt-1 text-sm" style={{ color: 'var(--color-sarfees-muted)' }}>
           {redeem.driverName}&apos;s wallet was topped up. They received a

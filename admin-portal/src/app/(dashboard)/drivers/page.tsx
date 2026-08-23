@@ -1,3 +1,4 @@
+import { getCurrencySymbol } from '@/lib/currency';
 import Link from 'next/link';
 import { Plus, Search } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
@@ -20,6 +21,7 @@ const STATUS_TABS: { value: ''; label: string }[] | { value: '' | DriverStatus; 
 ];
 
 export default async function DriversListPage({ searchParams }: PageProps) {
+  const cur = await getCurrencySymbol();
   const sp = await searchParams;
   const q = sp.q ?? '';
   const status = sp.status ?? '';
@@ -177,7 +179,7 @@ export default async function DriversListPage({ searchParams }: PageProps) {
                   </td>
                   <td className="px-5 py-3">{d.totalTrips}</td>
                   <td className="px-5 py-3">
-                    {Number(d.outstandingBalance).toFixed(2)} JD
+                    {Number(d.outstandingBalance).toFixed(2)} {cur}
                   </td>
                 </tr>
               ))}

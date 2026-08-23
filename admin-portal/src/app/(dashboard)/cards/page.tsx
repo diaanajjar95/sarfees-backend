@@ -1,3 +1,4 @@
+import { getCurrencySymbol } from '@/lib/currency';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { HandCoins } from 'lucide-react';
@@ -34,6 +35,7 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export default async function CardsPage() {
+  const cur = await getCurrencySymbol();
   const me = await getCurrentAdmin();
   if (me && !['super_admin', 'seller'].includes(me.role)) redirect('/');
 
@@ -58,7 +60,7 @@ export default async function CardsPage() {
       </div>
 
       <div className="mt-4">
-        <GenerateBatchForm />
+        <GenerateBatchForm currency={cur} />
       </div>
 
       <div className="mt-4 surface-card overflow-x-auto">
@@ -80,7 +82,7 @@ export default async function CardsPage() {
             {batches.map((b) => (
               <tr key={b.batchId} className="border-t" style={{ borderColor: 'var(--color-sarfees-border)' }}>
                 <td className="px-5 py-3 font-mono">{b.batchId.slice(0, 8)}</td>
-                <td className="px-5 py-3 font-semibold">{Number(b.amount).toFixed(2)} JD</td>
+                <td className="px-5 py-3 font-semibold">{Number(b.amount).toFixed(2)} {cur}</td>
                 <td className="px-5 py-3">{b.total}</td>
                 <td className="px-5 py-3" style={{ color: '#2E7D32' }}>{b.available}</td>
                 <td className="px-5 py-3" style={{ color: '#B57E0A' }}>{b.redeemed}</td>
@@ -106,7 +108,7 @@ export default async function CardsPage() {
             {cards.data.map((c) => (
               <tr key={c.id} className="border-t" style={{ borderColor: 'var(--color-sarfees-border)' }}>
                 <td className="px-5 py-3 font-mono">{c.codeMasked}</td>
-                <td className="px-5 py-3">{Number(c.amount).toFixed(2)} JD</td>
+                <td className="px-5 py-3">{Number(c.amount).toFixed(2)} {cur}</td>
                 <td className="px-5 py-3">
                   <span className="rounded px-2 py-0.5 text-xs font-bold" style={{ color: STATUS_COLOR[c.status] ?? '#9E9E9E', border: `1px solid ${STATUS_COLOR[c.status] ?? '#9E9E9E'}44` }}>
                     {c.status}

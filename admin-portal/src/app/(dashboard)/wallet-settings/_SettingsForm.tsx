@@ -8,10 +8,12 @@ export default function SettingsForm({
   commissionPercent,
   lowBalanceThresholdJod,
   readOnly,
+  currency,
 }: {
   commissionPercent: number;
   lowBalanceThresholdJod: number;
   readOnly: boolean;
+  currency: string;
 }) {
   const [state, formAction, pending] = useActionState(updateWalletConfigAction, null);
   return (
@@ -25,7 +27,7 @@ export default function SettingsForm({
         </p>
       </div>
       <div>
-        <label className="field-label">Low-balance warning threshold (JD)</label>
+        <label className="field-label">Low-balance warning threshold ({currency})</label>
         <input name="lowBalanceThresholdJod" type="number" min={0} max={1000} step={0.5} defaultValue={lowBalanceThresholdJod} disabled={readOnly} required className="input-field" />
       </div>
       {state && !state.ok && (

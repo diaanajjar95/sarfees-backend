@@ -1,3 +1,4 @@
+import { getCurrencySymbol } from '@/lib/currency';
 import { redirect } from 'next/navigation';
 import { getCurrentAdmin } from '@/lib/auth';
 import RedeemFlow from './_RedeemFlow';
@@ -5,6 +6,7 @@ import RedeemFlow from './_RedeemFlow';
 export const dynamic = 'force-dynamic';
 
 export default async function RedeemPage() {
+  const cur = await getCurrencySymbol();
   const me = await getCurrentAdmin();
   if (me && !['super_admin', 'seller'].includes(me.role)) redirect('/');
 
@@ -15,7 +17,7 @@ export default async function RedeemPage() {
         The driver pays you cash. Enter their mobile number, confirm the
         name, then enter the card code — the wallet credits instantly.
       </p>
-      <RedeemFlow />
+      <RedeemFlow currency={cur} />
     </div>
   );
 }

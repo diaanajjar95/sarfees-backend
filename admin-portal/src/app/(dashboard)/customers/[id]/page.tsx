@@ -1,3 +1,4 @@
+import { getCurrencySymbol } from '@/lib/currency';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
@@ -56,6 +57,7 @@ export default async function CustomerDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const cur = await getCurrencySymbol();
   const { id } = await params;
   const customerId = Number(id);
   if (!Number.isFinite(customerId)) notFound();
@@ -123,7 +125,7 @@ export default async function CustomerDetailPage({
                     </td>
                     <td className="py-2">{t.driverName ?? '—'}</td>
                     <td className="py-2">{t.seats}</td>
-                    <td className="py-2 text-right">{Number(t.totalFare).toFixed(2)} JD</td>
+                    <td className="py-2 text-right">{Number(t.totalFare).toFixed(2)} {cur}</td>
                     <td className="py-2 text-right" style={{ color: 'var(--color-sarfees-muted)' }}>
                       {t.travelDate ? new Date(t.travelDate).toLocaleString() : '—'}
                     </td>

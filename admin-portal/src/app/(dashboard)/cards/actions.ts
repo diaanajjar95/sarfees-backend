@@ -18,7 +18,7 @@ export async function generateBatchAction(
   const amount = Number(formData.get('amount'));
   const count = Number(formData.get('count'));
   if (!Number.isFinite(amount) || amount < 1)
-    return { ok: false, error: 'Enter a card value (JD).' };
+    return { ok: false, error: 'Enter a card value.' };
   if (!Number.isInteger(count) || count < 1 || count > 1000)
     return { ok: false, error: 'Count must be 1–1000.' };
   try {

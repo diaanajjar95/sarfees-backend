@@ -1,3 +1,4 @@
+import { getCurrencySymbol } from '@/lib/currency';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ChevronLeft } from 'lucide-react';
@@ -11,6 +12,7 @@ interface PageProps {
 }
 
 export default async function PassengerRequestDetailPage({ params }: PageProps) {
+  const cur = await getCurrencySymbol();
   const { id } = await params;
   const reqId = Number(id);
   if (!Number.isFinite(reqId)) notFound();
@@ -107,8 +109,8 @@ export default async function PassengerRequestDetailPage({ params }: PageProps) 
         </DataCard>
 
         <DataCard title="Pricing & assignment">
-          <Row label="Per-seat fare" value={`${Number(req.perSeatFare).toFixed(2)} JD`} />
-          <Row label="Total fare" value={`${Number(req.totalFare).toFixed(2)} JD`} />
+          <Row label="Per-seat fare" value={`${Number(req.perSeatFare).toFixed(2)} ${cur}`} />
+          <Row label="Total fare" value={`${Number(req.totalFare).toFixed(2)} ${cur}`} />
           <Row label="Passenger gender" value={req.passengerGender ?? '—'} />
           <Row
             label="Driver"

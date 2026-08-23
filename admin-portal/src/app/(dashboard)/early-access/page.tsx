@@ -1,3 +1,4 @@
+import { getCurrencySymbol } from '@/lib/currency';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
 
@@ -58,6 +59,7 @@ interface PageProps {
 }
 
 export default async function EarlyAccessPage({ searchParams }: PageProps) {
+  const cur = await getCurrencySymbol();
   const sp = await searchParams;
   const role = sp.role ?? '';
   const page = Number(sp.page ?? 1);
@@ -209,7 +211,7 @@ export default async function EarlyAccessPage({ searchParams }: PageProps) {
                   {[
                     r.frequency && `Travels: ${CHIP_LABEL[r.frequency] ?? r.frequency}`,
                     r.travelTime && `Time: ${CHIP_LABEL[r.travelTime] ?? r.travelTime}`,
-                    r.fairPriceJod !== null && `Fair price: ${r.fairPriceJod} JD`,
+                    r.fairPriceJod !== null && `Fair price: ${r.fairPriceJod} ${cur}`,
                     r.findMethod && `Finds riders via: ${CHIP_LABEL[r.findMethod] ?? r.findMethod}`,
                   ]
                     .filter(Boolean)

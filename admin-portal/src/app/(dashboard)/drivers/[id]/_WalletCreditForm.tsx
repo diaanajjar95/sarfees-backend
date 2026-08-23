@@ -4,13 +4,13 @@ import { useActionState } from 'react';
 import { Wallet } from 'lucide-react';
 import { creditWalletAction } from './wallet-actions';
 
-export default function WalletCreditForm({ driverId }: { driverId: number }) {
+export default function WalletCreditForm({ driverId, currency }: { driverId: number; currency: string }) {
   const [state, formAction, pending] = useActionState(creditWalletAction, null);
   return (
     <form action={formAction} className="mt-3 flex flex-wrap items-end gap-2">
       <input type="hidden" name="driverId" value={driverId} />
       <div>
-        <label className="field-label">Amount (JD)</label>
+        <label className="field-label">Amount ({currency})</label>
         <input name="amount" type="number" min={0.5} step={0.5} required className="input-field w-28" />
       </div>
       <div>

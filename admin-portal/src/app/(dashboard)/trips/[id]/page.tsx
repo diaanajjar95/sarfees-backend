@@ -1,3 +1,4 @@
+import { getCurrencySymbol } from '@/lib/currency';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
@@ -53,6 +54,7 @@ const EVENT_META: Record<
 };
 
 export default async function TripDetailPage({ params }: PageProps) {
+  const cur = await getCurrencySymbol();
   const { id } = await params;
   const tripId = Number(id);
   if (!Number.isFinite(tripId)) notFound();
@@ -135,7 +137,7 @@ export default async function TripDetailPage({ params }: PageProps) {
           label="Cash collected / expected"
           value={`${Number(trip.totalCashCollected).toFixed(2)} / ${Number(
             trip.totalCashExpected,
-          ).toFixed(2)} JD`}
+          ).toFixed(2)} ${cur}`}
         />
       </div>
 
@@ -173,19 +175,19 @@ export default async function TripDetailPage({ params }: PageProps) {
             Pricing breakdown
           </h2>
           <div className="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
-            <PriceCell label="Expected" value={`${trip.pricing.totalCashExpected.toFixed(2)} JD`} />
-            <PriceCell label="Collected" value={`${trip.pricing.totalCashCollected.toFixed(2)} JD`} />
+            <PriceCell label="Expected" value={`${trip.pricing.totalCashExpected.toFixed(2)} ${cur}`} />
+            <PriceCell label="Collected" value={`${trip.pricing.totalCashCollected.toFixed(2)} ${cur}`} />
             <PriceCell
               label="Commission rate"
               value={`${(trip.pricing.commissionRate * 100).toFixed(1)}%`}
             />
             <PriceCell
               label="Commission"
-              value={`${trip.pricing.commissionAmount.toFixed(2)} JD`}
+              value={`${trip.pricing.commissionAmount.toFixed(2)} ${cur}`}
             />
             <PriceCell
               label="Net to driver"
-              value={`${trip.pricing.netEarnings.toFixed(2)} JD`}
+              value={`${trip.pricing.netEarnings.toFixed(2)} ${cur}`}
               highlight
             />
           </div>
@@ -366,7 +368,7 @@ export default async function TripDetailPage({ params }: PageProps) {
                     className="text-xs mt-1"
                     style={{ color: 'var(--color-sarfees-muted)' }}
                   >
-                    cash: {Number(s.cashExpected).toFixed(2)} JD
+                    cash: {Number(s.cashExpected).toFixed(2)} {cur}
                   </div>
                 </div>
               </div>
@@ -390,7 +392,7 @@ export default async function TripDetailPage({ params }: PageProps) {
                         </span>
                         <span style={{ color: 'var(--color-sarfees-muted)' }}>
                           {p.role} · {p.status} ·{' '}
-                          {Number(p.fare).toFixed(2)} JD
+                          {Number(p.fare).toFixed(2)} {cur}
                           {p.cashCollected === false && ' · cash unpaid'}
                         </span>
                       </li>
@@ -421,7 +423,7 @@ export default async function TripDetailPage({ params }: PageProps) {
                         </span>
                         <span style={{ color: 'var(--color-sarfees-muted)' }}>
                           {p.role} · {p.status} ·{' '}
-                          {Number(p.fee).toFixed(2)} JD
+                          {Number(p.fee).toFixed(2)} {cur}
                         </span>
                       </li>
                     ))}

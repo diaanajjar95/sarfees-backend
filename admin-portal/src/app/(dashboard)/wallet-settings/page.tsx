@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { apiFetch } from '@/lib/api';
 import { getCurrentAdmin } from '@/lib/auth';
 import SettingsForm from './_SettingsForm';
+import CurrencyForm from './_CurrencyForm';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,6 +18,14 @@ export default async function WalletSettingsPage() {
   if (me && !['super_admin', 'finance'].includes(me.role)) redirect('/');
 
   const cfg = await apiFetch<WalletConfig>('/admin/wallet-config');
+  const platform = await apiFetch<{
+    currencyCode: string;
+    currency: { symbolEn: string };
+    availableCurrencies: {
+      code: string; symbolEn: string; symbolAr: string;
+      nameEn: string; nameAr: string;
+    }[];
+  }>('/admin/platform-config');
 
   return (
     <div>
@@ -25,11 +34,19 @@ export default async function WalletSettingsPage() {
         Platform commission and driver low-balance warning. Last changed{' '}
         {new Date(cfg.updatedAt).toLocaleString()}.
       </p>
-      <SettingsForm
-        commissionPercent={Number(cfg.commissionPercent)}
-        lowBalanceThresholdJod={Number(cfg.lowBalanceThresholdJod)}
-        readOnly={me?.role !== 'super_admin'}
-      />
+      <div className="space-y-4">
+        <CurrencyForm
+          current={platform.currencyCode}
+          options={platform.availableCurrencies}
+          readOnly={me?.role !== 'super_admin'}
+        />
+        <SettingsForm
+          commissionPercent={Number(cfg.commissionPercent)}
+          lowBalanceThresholdJod={Number(cfg.lowBalanceThresholdJod)}
+          readOnly={me?.role !== 'super_admin'}
+          currency={platform.currency.symbolEn}
+        />
+      </div>
     </div>
   );
 }
