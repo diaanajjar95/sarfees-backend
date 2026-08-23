@@ -130,6 +130,51 @@ export class PushService implements OnApplicationBootstrap {
 
   // ─── Sending ──────────────────────────────────────────────────
 
+  /**
+   * Types that must ALWAYS reach the app's own FCM handler — a push
+   * with a `notification` block is displayed by Android itself when
+   * the app is backgrounded/killed and `onMessageReceived` never
+   * runs, so the full-screen offer overlay / countdown / auto-dismiss
+   * logic would be skipped. These are sent DATA-ONLY (title/body move
+   * into `data`; the app renders its own notification) with
+   * high-priority delivery hints for both platforms.
+   */
+  private static readonly DATA_ONLY_TYPES = new Set([
+    'offer_received',
+    'offer_no_longer_available',
+    'trip_assigned',
+    'trip_reminder',
+    'trip_updated',
+    'passenger_cancelled',
+  ]);
+
+  /** FCM message body for one recipient set — data-only when the type demands it. */
+  private buildMessage(msg: PushMessage): {
+    notification?: { title: string; body: string };
+    data: Record<string, string>;
+    android?: { priority: 'high' | 'normal' };
+    apns?: {
+      headers?: Record<string, string>;
+      payload: { aps: Record<string, unknown> };
+    };
+  } {
+    const type = msg.data?.type ?? '';
+    if (PushService.DATA_ONLY_TYPES.has(type)) {
+      return {
+        data: { ...(msg.data ?? {}), title: msg.title, body: msg.body },
+        android: { priority: 'high' },
+        apns: {
+          headers: { 'apns-priority': '5', 'apns-push-type': 'background' },
+          payload: { aps: { 'content-available': 1 } },
+        },
+      };
+    }
+    return {
+      notification: { title: msg.title, body: msg.body },
+      data: msg.data ?? {},
+    };
+  }
+
   /** Push to every registered device of one passenger/driver. */
   async sendToOwner(
     ownerType: DeviceOwnerType,
@@ -148,8 +193,7 @@ export class PushService implements OnApplicationBootstrap {
     try {
       const res = await getMessaging(this.app).sendEachForMulticast({
         tokens: rows.map((r) => r.token),
-        notification: { title: msg.title, body: msg.body },
-        data: msg.data,
+        ...this.buildMessage(msg),
       });
       // Prune tokens Firebase reports as dead.
       const dead: string[] = [];
