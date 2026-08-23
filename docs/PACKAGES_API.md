@@ -31,6 +31,34 @@ The **receiver** needs no account and none of these: they get a WhatsApp
 message with an anonymous tracking link `GET /track/{token}` (status
 timeline only, no map, no login).
 
+## 1.1 Setting the collection start time (booking)
+
+`POST /packages/request` decides **when collection starts** via two
+fields:
+
+| Field | Meaning |
+|---|---|
+| `isImmediate: true` | Collect as soon as possible. The server sets the pickup slot ~20 min out (the matching "now window") so a driver can be found; any `pickupDate` sent is ignored. |
+| `isImmediate: false` + `pickupDate` | Scheduled collection at the given ISO time. |
+
+`pickupDate` rules (same as the trip time picker — build the UI
+accordingly):
+
+- at least **30 minutes ahead** (T-30 matching runway) — 400 otherwise
+- on the **15-minute grid** (`:00 / :15 / :30 / :45`, seconds zero, UTC) — 400 otherwise
+- at most **30 days ahead** — 400 otherwise
+
+Example — collect tomorrow at 10:30:
+
+```json
+{ "isImmediate": false, "pickupDate": "2026-08-22T07:30:00Z", … }
+```
+
+The chosen slot comes back as `pickupDate` (+ `isImmediate`) on
+`GET /packages/{id}`, `GET /packages/{id}/status`, and `/trips/active`.
+The driver search starts at **T-30 before `pickupDate`** — statuses stay
+`PENDING` until then for far-future bookings; that's normal, not a stall.
+
 ## 2. `GET /packages/{id}/status`
 
 Sender-scoped. `404` when the id doesn't exist **or** belongs to another
@@ -44,6 +72,8 @@ Response `data` shape:
 | `status` | enum | See lifecycle below |
 | `updatedAt` | ISO 8601 | Last change to the package record |
 | `driver` | object \| null | `null` until matched; then `{ name, phoneNumber (E.164), rating }` |
+| `pickupDate` | ISO 8601 | When collection starts — see §1.1. Countdown anchor for the `PENDING` screen |
+| `isImmediate` | boolean | `true` = ASAP booking, `false` = sender-scheduled slot |
 | `deliveryCode` | string | 4-digit handoff code, minted at booking. The receiver quotes it to the driver at delivery — show it to the sender so they can pass it on |
 
 ### Lifecycle

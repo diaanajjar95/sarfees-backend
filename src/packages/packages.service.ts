@@ -374,6 +374,10 @@ export class PackagesService {
       id: delivery.id,
       status: delivery.status,
       updatedAt: delivery.updatedAt,
+      // When collection starts — set at booking (isImmediate → ~now,
+      // else the sender's scheduled slot).
+      pickupDate: delivery.pickupDate,
+      isImmediate: delivery.isImmediate,
       driver: driver
         ? {
             name: driver.name,
