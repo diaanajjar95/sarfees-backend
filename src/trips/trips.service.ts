@@ -595,6 +595,7 @@ export class TripsService {
       firstName: firstName || '',
       lastName: lastName || '',
       profilePhotoUrl: driver.profilePhotoUrl || null,
+      phoneNumber: `${driver.countryCode ?? ''}${driver.phoneNumber}`,
       vehicleMake: driver.vehicleMake,
       vehicleModel: driver.vehicleModel,
       vehicleColor: driver.vehicleColor,

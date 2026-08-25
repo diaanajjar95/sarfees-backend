@@ -119,13 +119,16 @@ Active state (`GET /drivers/trips/{id}/active-state`):
    `{ "passengersPickedUp": [101], "passengersNoShow": [],
       "packagesCollected": [...], "packagesNotFound": [], "packagesRefused": [{id, reason}] }`
    — package cash is collected HERE; passenger fares are NOT.
-3. Dropoff stop → `POST …/stops/{stopId}/confirm-dropoff`
+3. Package delivery proof (optional): `POST …/{id}/handover-photo`
+   (multipart, `photo` field) → `{ "photoUrl": "/uploads/handover-photos/…" }`
+   — pass it in the next confirm's `packagesDelivered[].photoUrl`.
+4. Dropoff stop → `POST …/stops/{stopId}/confirm-dropoff`
    `{ "passengersDroppedOff": [{ "id": 101, "cashCollected": true }],
       "packagesDelivered": [{ "id": 14, "deliveryCode": "6532", "photoUrl": … }],
       "packagesFailed": [] }`
    — passenger cash at their own dropoff; package delivery needs the
    receiver's 4-digit code (wrong code → 400).
-4. Both confirms return the fresh **active-state** — advance the UI.
+5. Both confirms return the fresh **active-state** — advance the UI.
 
 Row status chips: passengers `pending / picked_up / no_show / dropped_off /
 cash_not_collected / cancelled`; packages `pending / collected / not_found /

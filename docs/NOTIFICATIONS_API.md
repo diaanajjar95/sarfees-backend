@@ -69,7 +69,7 @@ pick by app language. Driver rows carry a single `title`/`body`.
 | `driver_arrived` | driver at this passenger's pickup | live trip |
 | `trip_started` | this passenger picked up | live trip |
 | `trip_completed` | dropped off | trip summary |
-| `trip_cancelled` | any cancellation (driver no-show marking included) | trip history |
+| `trip_cancelled` | any cancellation | trip history — `payload.reason` picks the banner: `driver_cancelled` (auto-rematch banner), `admin_cancelled`, `no_show` |
 | `trip_delay_escalation` | nobody accepted by departure — ops working on it | trip screen |
 | `rate_your_trip` | trip completed — optional rating nudge | rating screen (`tripRequestId`) |
 | `package_picked_up` | sender: parcel collected (cash paid) | package detail (`packageId`) |

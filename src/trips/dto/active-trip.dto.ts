@@ -18,6 +18,12 @@ export class DriverInfoDto {
   @ApiPropertyOptional({ example: '/uploads/profiles/driver.jpg' })
   profilePhotoUrl: string | null;
 
+  @ApiProperty({
+    example: '+962770000001',
+    description: 'E.164 — powers the in-app Call button.',
+  })
+  phoneNumber: string;
+
   @ApiProperty({ example: 'Toyota' })
   vehicleMake: string;
 

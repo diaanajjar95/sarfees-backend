@@ -75,6 +75,7 @@ Response `data` shape:
 | `pickupDate` | ISO 8601 | When collection starts — see §1.1. Countdown anchor for the `PENDING` screen |
 | `isImmediate` | boolean | `true` = ASAP booking, `false` = sender-scheduled slot |
 | `deliveryCode` | string | 4-digit handoff code, minted at booking. The receiver quotes it to the driver at delivery — show it to the sender so they can pass it on |
+| `deliveredPhotoUrl` | string \| null | Proof-of-handover photo the driver took at delivery. Null until `DELIVERED`, and only when the driver attached one — render the photo card only when non-null |
 
 ### Lifecycle
 

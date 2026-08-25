@@ -1,6 +1,8 @@
 import {
   Body,
   Controller,
+  UploadedFile,
+  UseInterceptors,
   Get,
   HttpCode,
   HttpStatus,
@@ -12,6 +14,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname } from 'path';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -164,6 +169,37 @@ export class DriverTripsController {
   })
   @ApiResponse({ status: 200, type: ActiveStateResponseDto })
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Upload a proof-of-handover photo',
+    description:
+      'Multipart (`photo` field, JPG/PNG/WebP/HEIC up to 10 MB). Returns ' +
+      'the photoUrl to pass in confirm-dropoff packagesDelivered[].photoUrl. ' +
+      'Call it right before confirming the delivery stop.',
+  })
+  @Post(':id/handover-photo')
+  @UseInterceptors(
+    FileInterceptor('photo', {
+      storage: diskStorage({
+        destination: './uploads/handover-photos',
+        filename: (req, file, cb) => {
+          const uniqueSuffix =
+            Date.now() + '-' + Math.round(Math.random() * 1e9);
+          cb(null, `${uniqueSuffix}${extname(file.originalname)}`);
+        },
+      }),
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
+  async uploadHandoverPhoto(
+    @Req() req: Request,
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() photo: Express.Multer.File,
+  ) {
+    // Ownership check only — the URL is consumed by confirm-dropoff.
+    await this.tripsService.getManifest(this.driverId(req), id);
+    return { photoUrl: `/uploads/handover-photos/${photo.filename}` };
+  }
+
   @Post(':id/stops/:stopId/confirm-dropoff')
   confirmDropoff(
     @Req() req: Request,

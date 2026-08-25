@@ -835,7 +835,7 @@ export class DriverTripsService {
       titleAr: 'تم إلغاء الرحلة — لم تتواجد',
       bodyEn: 'The driver marked you as a no-show and your trip was cancelled.',
       bodyAr: 'سجل السائق عدم تواجدك وتم إلغاء رحلتك.',
-      payload: { tripId: trip.id, stopId: stop.id },
+      payload: { tripId: trip.id, stopId: stop.id, reason: 'no_show' },
     });
     // Package senders: collected vs not-found
     await this.emitPackageNotifications({
@@ -1398,7 +1398,7 @@ export class DriverTripsService {
         'Your driver cancelled the trip. We will try to match you with another driver shortly.',
       bodyAr:
         'ألغى السائق رحلتك. سنحاول العثور على سائق آخر لك قريبًا.',
-      payload: { tripId: trip.id, zone },
+      payload: { tripId: trip.id, zone, reason: 'driver_cancelled' },
     });
     await this.emitPackageNotifications({
       packageIds,
@@ -1535,7 +1535,7 @@ export class DriverTripsService {
       titleAr: 'قامت سرفيس بإلغاء الرحلة',
       bodyEn: 'Sarfees support cancelled your trip. Please book again or contact support.',
       bodyAr: 'ألغى فريق دعم سرفيس رحلتك. يرجى الحجز مرة أخرى أو التواصل مع الدعم.',
-      payload: { tripId: trip.id, byAdmin: true },
+      payload: { tripId: trip.id, byAdmin: true, reason: 'admin_cancelled' },
     });
     await this.emitPackageNotifications({
       packageIds,
