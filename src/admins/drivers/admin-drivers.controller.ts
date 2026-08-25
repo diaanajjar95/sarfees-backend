@@ -99,6 +99,18 @@ export class AdminDriversController {
   })
   @ApiResponse({ status: 200, type: LiveMapResponseDto })
   // Two-segment path so it never collides with :id (single-segment).
+  @ApiOperation({
+    summary: 'Dispatch map overview — drivers + demand + KPIs in one call',
+    description:
+      'Driver pins with heading/last-ping/wallet/current trip, groups ' +
+      'still searching for a driver (escalations flagged), network ' +
+      'KPIs, and city service circles. Poll every ~10 s.',
+  })
+  @Get('live/overview')
+  liveOverview() {
+    return this.service.liveOverview();
+  }
+
   @Get('live/map')
   liveMap(): Promise<LiveMapResponseDto> {
     return this.service.liveMap();
