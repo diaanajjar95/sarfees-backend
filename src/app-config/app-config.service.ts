@@ -5,6 +5,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { marked } from 'marked';
 import { MobilePlatform } from './dto/init-query.dto';
+import { MobileAppConfig } from './mobile-app-config.entity';
 
 export interface LocalizedDocument {
   /** Arabic body, rendered HTML. */
@@ -49,24 +50,22 @@ export class AppConfigService {
 
   constructor(private readonly config: ConfigService) {}
 
-  /** Per-platform version metadata driven by env vars. */
-  getPlatformVersion(platform: MobilePlatform): PlatformVersionInfo {
+  /** Per-platform version metadata from the app's portal-managed row. */
+  getPlatformVersion(
+    cfg: MobileAppConfig,
+    platform: MobilePlatform,
+  ): PlatformVersionInfo {
     if (platform === MobilePlatform.IOS) {
       return {
-        latestVersion: this.config.get<string>('IOS_LATEST_VERSION') ?? '1.0.0',
-        minVersion: this.config.get<string>('IOS_MIN_VERSION') ?? '1.0.0',
-        storeUrl:
-          this.config.get<string>('IOS_STORE_URL') ??
-          'https://apps.apple.com/app/idPLACEHOLDER',
+        latestVersion: cfg.iosLatestVersion,
+        minVersion: cfg.iosMinVersion,
+        storeUrl: cfg.iosStoreUrl,
       };
     }
     return {
-      latestVersion:
-        this.config.get<string>('ANDROID_LATEST_VERSION') ?? '1.0.0',
-      minVersion: this.config.get<string>('ANDROID_MIN_VERSION') ?? '1.0.0',
-      storeUrl:
-        this.config.get<string>('ANDROID_STORE_URL') ??
-        'https://play.google.com/store/apps/details?id=PLACEHOLDER',
+      latestVersion: cfg.androidLatestVersion,
+      minVersion: cfg.androidMinVersion,
+      storeUrl: cfg.androidStoreUrl,
     };
   }
 
@@ -86,12 +85,16 @@ export class AppConfigService {
   }
 
   /** Feature-flag / toggle values surfaced on app launch. */
-  getSettings() {
+  getSettings(cfg: MobileAppConfig) {
+    // Back-compat block: maintenanceMessage resolves to the request
+    // language; the richer bilingual pair lives in init's `maintenance`.
+    const lang = this.getCurrentLanguage();
     return {
-      maintenanceMode:
-        (this.config.get<string>('MAINTENANCE_MODE') ?? 'false') === 'true',
+      maintenanceMode: cfg.maintenanceMode,
       maintenanceMessage:
-        this.config.get<string>('MAINTENANCE_MESSAGE') ?? null,
+        (lang === 'ar' ? cfg.maintenanceMessageAr : cfg.maintenanceMessageEn) ??
+        cfg.maintenanceMessageEn ??
+        null,
       defaultLanguage: this.config.get<string>('DEFAULT_LANGUAGE') ?? 'en',
       supportedLanguages: (
         this.config.get<string>('SUPPORTED_LANGUAGES') ?? 'en,ar'
@@ -107,11 +110,12 @@ export class AppConfigService {
    * Returns sane defaults when platform / version are not supplied.
    */
   getForceUpdate(
+    cfg: MobileAppConfig,
     platform: MobilePlatform | undefined,
     currentVersion: string | undefined,
   ): ForceUpdateResult {
     const resolvedPlatform = platform ?? MobilePlatform.IOS;
-    const version = this.getPlatformVersion(resolvedPlatform);
+    const version = this.getPlatformVersion(cfg, resolvedPlatform);
 
     // If we can't parse the client version, don't force an update.
     if (!currentVersion) {

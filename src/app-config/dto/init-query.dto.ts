@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString, Matches } from 'class-validator';
+import { MobileApp } from '../mobile-app-config.entity';
 
 export enum MobilePlatform {
   IOS = 'ios',
@@ -7,6 +8,16 @@ export enum MobilePlatform {
 }
 
 export class InitQueryDto {
+  @ApiPropertyOptional({
+    description:
+      'Which app is calling — versions and maintenance are controlled per app from the admin portal.',
+    enum: MobileApp,
+    default: MobileApp.PASSENGER,
+  })
+  @IsOptional()
+  @IsEnum(MobileApp, { message: 'app must be one of: passenger, driver' })
+  app?: MobileApp;
+
   @ApiPropertyOptional({
     description: 'Mobile platform making the request',
     enum: MobilePlatform,
