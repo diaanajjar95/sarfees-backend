@@ -1,12 +1,19 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AppConfigService } from './app-config.service';
+import { MobileAppConfigService } from './mobile-app-config.service';
+import { MobileApp } from './mobile-app-config.entity';
+import { PlatformConfigService } from '../platform/platform-config.service';
 import { InitQueryDto } from './dto/init-query.dto';
 
 @ApiTags('App')
 @Controller('app')
 export class AppConfigController {
-  constructor(private readonly appConfig: AppConfigService) {}
+  constructor(
+    private readonly appConfig: AppConfigService,
+    private readonly mobileConfig: MobileAppConfigService,
+    private readonly platformConfig: PlatformConfigService,
+  ) {}
 
   @ApiOperation({
     summary: 'App initialization payload',
@@ -17,17 +24,22 @@ export class AppConfigController {
   })
   @ApiResponse({ status: 200, description: 'App init payload' })
   @Get('init')
-  init(@Query() query: InitQueryDto) {
+  async init(@Query() query: InitQueryDto) {
+    const app = query.app ?? MobileApp.PASSENGER;
+    const cfg = await this.mobileConfig.getConfig(app);
     const forceUpdate = this.appConfig.getForceUpdate(
+      cfg,
       query.platform,
       query.currentVersion,
     );
     const links = this.appConfig.getAppLinks();
-    const settings = this.appConfig.getSettings();
+    const settings = this.appConfig.getSettings(cfg);
     const currentLanguage = this.appConfig.getCurrentLanguage();
     const legal = this.appConfig.getLegal();
+    const currency = await this.platformConfig.currency();
 
     return {
+      app,
       version: {
         latestVersion: forceUpdate.latestVersion,
         minVersion: forceUpdate.minVersion,
@@ -35,6 +47,12 @@ export class AppConfigController {
         forceUpdate: forceUpdate.forceUpdate,
         updateAvailable: forceUpdate.updateAvailable,
       },
+      maintenance: {
+        active: cfg.maintenanceMode,
+        messageEn: cfg.maintenanceMessageEn,
+        messageAr: cfg.maintenanceMessageAr,
+      },
+      currency,
       links,
       settings,
       currentLanguage,
@@ -51,7 +69,14 @@ export class AppConfigController {
   })
   @ApiResponse({ status: 200, description: 'Force-update decision' })
   @Get('force-update')
-  forceUpdate(@Query() query: InitQueryDto) {
-    return this.appConfig.getForceUpdate(query.platform, query.currentVersion);
+  async forceUpdate(@Query() query: InitQueryDto) {
+    const cfg = await this.mobileConfig.getConfig(
+      query.app ?? MobileApp.PASSENGER,
+    );
+    return this.appConfig.getForceUpdate(
+      cfg,
+      query.platform,
+      query.currentVersion,
+    );
   }
 }

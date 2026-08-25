@@ -19,6 +19,7 @@ import {
   Sparkles,
   Users,
   UsersRound,
+  Smartphone,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -47,6 +48,7 @@ const NAV: NavEntry[] = [
   { href: '/notifications', label: 'Notifications', icon: BellRing },
   { href: '/cards', label: 'Cards', icon: CreditCard, roles: ['super_admin', 'seller'] },
   { href: '/wallet-settings', label: 'Wallet settings', icon: Settings, roles: ['super_admin', 'finance'] },
+  { href: '/app-settings', label: 'App settings', icon: Smartphone, roles: ['super_admin'] },
   { href: '/admins', label: 'Admins', icon: ShieldCheck, roles: ['super_admin'] },
 ];
 
