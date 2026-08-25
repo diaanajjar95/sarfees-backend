@@ -34,6 +34,26 @@ Registration auto-subscribes the device to its platform topic
 (`all_customers` / `all_drivers`) — ops broadcasts land with no extra work.
 Re-POSTing a token is always safe; it re-homes to the current account.
 
+## 1.1 Duplicate-push protection — send `deviceId`
+
+FCM tokens rotate (reinstall, data clear, dev rebuild) and the old
+token can stay deliverable for a while — if the app registers the new
+token without identifying the device, the server has TWO live tokens
+for one phone and **every push arrives twice**.
+
+Fix: include a stable per-install `deviceId` in the register call
+(`ANDROID_ID` on Android, `identifierForVendor` on iOS):
+
+```json
+POST /drivers/device-token   (or /users/device-token)
+{ "token": "<fcm token>", "platform": "android", "deviceId": "9f8e7d6c5b4a" }
+```
+
+With `deviceId`, registering a rotated token **replaces** the device's
+previous row (any owner — account switches re-home cleanly) instead of
+coexisting with it. Without it, the server only prunes tokens Firebase
+reports dead. Also keep calling the DELETE on logout.
+
 ## 2. Push payload → deep links
 
 Pushes carry a display `notification` (title/body — Arabic by default for
