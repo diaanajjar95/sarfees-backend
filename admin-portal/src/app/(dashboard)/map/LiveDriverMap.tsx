@@ -202,8 +202,10 @@ export default function LiveDriverMap() {
   useEffect(() => {
     let cancelled = false;
 
-    async function poll() {
-      if (document.hidden) return; // pause while the tab is in background
+    async function poll(force = false) {
+      // Interval re-polls pause while the tab is hidden; the initial
+      // load (and visibility-return) always fetch.
+      if (!force && document.hidden) return;
       try {
         const res = await fetch('/api/admin/map-overview', {
           credentials: 'same-origin',
@@ -221,10 +223,10 @@ export default function LiveDriverMap() {
       }
     }
 
-    void poll();
+    void poll(true);
     timerRef.current = setInterval(() => void poll(), REFRESH_MS);
     const onVisible = () => {
-      if (!document.hidden) void poll();
+      if (!document.hidden) void poll(true);
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
