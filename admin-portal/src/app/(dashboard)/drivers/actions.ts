@@ -59,6 +59,32 @@ export async function createDriverAction(
     if (err instanceof ApiError) return { ok: false, error: err.message };
     return { ok: false, error: 'Unable to create driver.' };
   }
+  // Registration attachments — upload whichever files were provided.
+  // Failures don't abort the flow: the driver exists, and the Documents
+  // section on their page shows any type still missing.
+  const DOC_TYPES = [
+    'driving_license',
+    'national_id',
+    'vehicle_registration',
+    'insurance_certificate',
+  ];
+  for (const type of DOC_TYPES) {
+    const file = formData.get(`doc_file_${type}`);
+    if (!(file instanceof File) || file.size === 0) continue;
+    const upstream = new FormData();
+    upstream.set('file', file);
+    upstream.set('type', type);
+    const num = String(formData.get(`doc_number_${type}`) ?? '').trim();
+    if (num) upstream.set('documentNumber', num);
+    const exp = String(formData.get(`doc_expiry_${type}`) ?? '');
+    if (exp) upstream.set('expiresAt', exp);
+    try {
+      await apiUpload(`/admin/drivers/${created.id}/documents`, upstream);
+    } catch {
+      /* surfaced as a missing card on the driver page */
+    }
+  }
+
   revalidatePath('/drivers');
   redirect(`/drivers/${created.id}`);
 }
