@@ -159,7 +159,16 @@ export class PushService implements OnApplicationBootstrap {
    * into `data`; the app renders its own notification) with
    * high-priority delivery hints for both platforms.
    */
-  private static readonly DATA_ONLY_TYPES = new Set([
+  /**
+   * ALL pushes are DATA-ONLY (no top-level `notification` key): the
+   * apps render their own notifications from data.title/data.body, and
+   * onMessageReceived always runs — foreground, background, or killed.
+   * These types additionally get high-priority delivery (time-
+   * sensitive: a driver's phone must wake up for them); everything
+   * else ships at normal priority to stay inside Android's Doze
+   * quotas.
+   */
+  private static readonly HIGH_PRIORITY_TYPES = new Set([
     'offer_received',
     'offer_no_longer_available',
     'trip_assigned',
@@ -168,30 +177,24 @@ export class PushService implements OnApplicationBootstrap {
     'passenger_cancelled',
   ]);
 
-  /** FCM message body for one recipient set — data-only when the type demands it. */
+  /** Uniform data-only FCM message body. */
   private buildMessage(msg: PushMessage): {
-    notification?: { title: string; body: string };
     data: Record<string, string>;
-    android?: { priority: 'high' | 'normal' };
-    apns?: {
-      headers?: Record<string, string>;
+    android: { priority: 'high' | 'normal' };
+    apns: {
+      headers: Record<string, string>;
       payload: { aps: Record<string, unknown> };
     };
   } {
     const type = msg.data?.type ?? '';
-    if (PushService.DATA_ONLY_TYPES.has(type)) {
-      return {
-        data: { ...(msg.data ?? {}), title: msg.title, body: msg.body },
-        android: { priority: 'high' },
-        apns: {
-          headers: { 'apns-priority': '5', 'apns-push-type': 'background' },
-          payload: { aps: { 'content-available': 1 } },
-        },
-      };
-    }
+    const high = PushService.HIGH_PRIORITY_TYPES.has(type);
     return {
-      notification: { title: msg.title, body: msg.body },
-      data: msg.data ?? {},
+      data: { ...(msg.data ?? {}), title: msg.title, body: msg.body },
+      android: { priority: high ? 'high' : 'normal' },
+      apns: {
+        headers: { 'apns-priority': '5', 'apns-push-type': 'background' },
+        payload: { aps: { 'content-available': 1 } },
+      },
     };
   }
 
@@ -243,8 +246,14 @@ export class PushService implements OnApplicationBootstrap {
     }
     await getMessaging(this.app).send({
       topic: topicName,
-      notification: { title: msg.title, body: msg.body },
-      data: msg.data,
+      ...this.buildMessage({
+        ...msg,
+        data: {
+          type: 'system_announcement',
+          payload: '{}',
+          ...(msg.data ?? {}),
+        },
+      }),
     });
   }
 
