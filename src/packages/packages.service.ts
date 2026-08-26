@@ -378,6 +378,9 @@ export class PackagesService {
       // else the sender's scheduled slot).
       pickupDate: delivery.pickupDate,
       isImmediate: delivery.isImmediate,
+      // Proof-of-handover photo the driver took at delivery (null until
+      // DELIVERED, and only when the driver attached one).
+      deliveredPhotoUrl: delivery.deliveredPhotoUrl ?? null,
       driver: driver
         ? {
             name: driver.name,

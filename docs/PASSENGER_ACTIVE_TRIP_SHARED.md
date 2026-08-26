@@ -14,7 +14,7 @@ Response shape (all statuses share it — fields fill in as the trip advances):
 |---|---|
 | `tripId`, `status`, `createdAt`, `statusUpdatedAt` | always |
 | `departureLocation` / `arrivalLocation` `{lat,lng}` | always |
-| `driver` (name, photo, vehicle, plate, rating, totalTrips) | `MATCHED` onward |
+| `driver` (name, photo, **phoneNumber** for the Call button, vehicle, plate, rating, totalTrips) | `MATCHED` onward |
 | `driverLocation` (lat, lng, heading, speed, recordedAt) | `DRIVER_EN_ROUTE` onward, while the driver streams GPS |
 | `etaToPickup` / `etaToDestination` | set by the driver app during the corresponding phases |
 
@@ -55,6 +55,7 @@ Push `request_matched` / `trip_assigned`.
     "id": 1, "firstName": "Ahmad", "lastName": "Khalil",
     "profilePhotoUrl": "/uploads/profiles/driver.jpg",
     "vehicleMake": "Toyota", "vehicleModel": "Camry",
+    "phoneNumber": "+962770000001",
     "vehicleColor": "White", "vehicleYear": 2021, "plateNumber": "22-11223",
     "rating": 4.85, "totalTrips": 227
   },
