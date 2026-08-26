@@ -125,6 +125,127 @@ export class AdminDriversService {
    * file. Small payload (~50 bytes per driver) so ops can poll it
    * every 30 s without blowing up the API.
    */
+  /**
+   * One-call payload for the dispatch map: driver pins enriched with
+   * heading / last GPS ping / wallet / current trip, demand pins
+   * (groups still hunting for a driver), network KPIs, and the city
+   * service circles. Raw SQL to keep it one round-trip per block.
+   */
+  async liveOverview() {
+    const mgr = this.driversRepo.manager;
+
+    const drivers: Array<Record<string, unknown>> = await mgr.query(`
+      SELECT d.id, d.name, d."countryCode", d."phoneNumber", d.status,
+             d."prefLocationLat" AS lat, d."prefLocationLng" AS lng,
+             d.rating, d."walletBalance",
+             loc.heading, loc."recordedAt" AS "lastPingAt",
+             dt.id AS "currentTripId", dt.status AS "currentTripStatus"
+      FROM drivers d
+      LEFT JOIN LATERAL (
+        SELECT heading, "recordedAt" FROM driver_locations l
+        WHERE l."driverId" = d.id ORDER BY l."recordedAt" DESC LIMIT 1
+      ) loc ON true
+      LEFT JOIN LATERAL (
+        SELECT id, status FROM driver_trips t
+        WHERE t."driverId" = d.id AND t.status IN ('accepted','in_progress')
+        ORDER BY t.id DESC LIMIT 1
+      ) dt ON true
+      WHERE d.status IN ('active','on_trip')
+        AND d."prefLocationLat" IS NOT NULL
+    `);
+
+    const demand: Array<Record<string, unknown>> = await mgr.query(`
+      SELECT g.id, g.status, g."departureTime", g."womenOnly",
+             c."nameEn" AS "originCity",
+             req.ids AS "requestIds", req.seats,
+             COALESCE(pkg.count, 0)::int AS "packageCount",
+             COALESCE(req.lat, pkg.lat) AS lat,
+             COALESCE(req.lng, pkg.lng) AS lng
+      FROM trip_groups g
+      JOIN cities c ON c.id = g."originCityId"
+      LEFT JOIN LATERAL (
+        SELECT array_agg(r.id) AS ids,
+               COALESCE(SUM(r."seatsCount"), 0)::int AS seats,
+               (array_agg(r."departureLocation"))[1]->>'lat' AS lat,
+               (array_agg(r."departureLocation"))[1]->>'lng' AS lng
+        FROM trip_requests r
+        WHERE r."tripGroupId" = g.id AND r.status NOT IN ('CANCELLED','COMPLETED')
+      ) req ON true
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*) AS count,
+               (array_agg(p."pickupLocation"))[1]->>'lat' AS lat,
+               (array_agg(p."pickupLocation"))[1]->>'lng' AS lng
+        FROM package_deliveries p
+        WHERE p."tripGroupId" = g.id AND p.status NOT IN ('CANCELLED','DELIVERED')
+      ) pkg ON true
+      WHERE g.status IN ('open','frozen','offering','unserved_escalation')
+    `);
+
+    const [kpiRow]: Array<Record<string, string>> = await mgr.query(`
+      SELECT
+        (SELECT COUNT(*) FROM drivers WHERE status = 'active')  AS "onlineDrivers",
+        (SELECT COUNT(*) FROM drivers WHERE status = 'on_trip') AS "onTripDrivers",
+        (SELECT COUNT(*) FROM trip_groups WHERE status IN ('open','frozen','offering')) AS "searchingGroups",
+        (SELECT COUNT(*) FROM trip_groups WHERE status = 'unserved_escalation')         AS "escalatedGroups",
+        (SELECT COUNT(*) FROM trip_requests WHERE status = 'PENDING')                   AS "pendingRequests"
+    `);
+
+    const cities: Array<Record<string, unknown>> = await mgr.query(`
+      SELECT id, "nameEn", "centerLat", "centerLng",
+             COALESCE("serviceRadiusMeters",
+               (SELECT "defaultServiceRadiusMeters" FROM matching_config LIMIT 1),
+               5000) AS "radiusMeters"
+      FROM cities WHERE "centerLat" IS NOT NULL
+    `);
+
+    return {
+      drivers: drivers.map((d) => ({
+        id: Number(d.id),
+        name: (d.name as string) ?? '',
+        phone: `${(d.countryCode as string) ?? ''}${(d.phoneNumber as string) ?? ''}`,
+        status: d.status,
+        lat: Number(d.lat),
+        lng: Number(d.lng),
+        heading: d.heading != null ? Number(d.heading) : null,
+        lastPingAt: d.lastPingAt ?? null,
+        rating: Number(d.rating),
+        walletBalance: Number(d.walletBalance),
+        currentTripId: d.currentTripId != null ? Number(d.currentTripId) : null,
+        currentTripStatus: d.currentTripStatus ?? null,
+      })),
+      demand: demand
+        .filter((g) => g.lat != null && g.lng != null)
+        .map((g) => ({
+          groupId: Number(g.id),
+          status: g.status,
+          escalated: g.status === 'unserved_escalation',
+          originCity: g.originCity,
+          departureTime: g.departureTime,
+          womenOnly: !!g.womenOnly,
+          seats: Number(g.seats ?? 0),
+          packageCount: Number(g.packageCount ?? 0),
+          requestIds: (g.requestIds as number[] | null) ?? [],
+          lat: Number(g.lat),
+          lng: Number(g.lng),
+        })),
+      kpis: {
+        onlineDrivers: Number(kpiRow.onlineDrivers),
+        onTripDrivers: Number(kpiRow.onTripDrivers),
+        searchingGroups: Number(kpiRow.searchingGroups),
+        escalatedGroups: Number(kpiRow.escalatedGroups),
+        pendingRequests: Number(kpiRow.pendingRequests),
+      },
+      cities: cities.map((c) => ({
+        id: Number(c.id),
+        name: c.nameEn,
+        lat: Number(c.centerLat),
+        lng: Number(c.centerLng),
+        radiusMeters: Number(c.radiusMeters),
+      })),
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
   async liveMap(): Promise<{
     drivers: Array<{
       id: number;

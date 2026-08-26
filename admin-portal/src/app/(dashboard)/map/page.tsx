@@ -11,7 +11,7 @@ export default function MapPage() {
       <div className="mb-4">
         <h1 className="text-2xl font-bold">Live driver map</h1>
         <p className="text-sm text-gray-500">
-          Currently active + on-trip drivers. Auto-refreshes every 30 seconds.
+          Dispatch view — drivers, waiting demand, escalations, and city service circles. Auto-refreshes every 10 seconds.
         </p>
       </div>
       <MapClientLoader />
