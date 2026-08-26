@@ -36,15 +36,32 @@ Re-POSTing a token is always safe; it re-homes to the current account.
 
 ## 2. Push payload → deep links
 
-Pushes carry a display `notification` (title/body — Arabic by default for
-passengers, the driver's own language for drivers) plus a `data` map:
+**Every push is DATA-ONLY** — there is never a top-level `notification`
+block. The app's FCM handler always runs (foreground, background, or
+killed) and renders its own notification from the `data` map:
 
 ```json
-{ "type": "trip_assigned", "payload": "{\"tripRequestId\":77,\"tripId\":93}" }
+{ "data": {
+    "type": "trip_assigned",
+    "title": "Driver assigned",
+    "body": "Ahmad is on the way",
+    "payload": "{\"tripRequestId\":77,\"tripId\":93}"
+} }
 ```
 
-`payload` is a **JSON string** — parse it, then route by `type` using the
-tables below. Handle unknown types gracefully (open the notification list).
+- `title` / `body`: Arabic by default for passengers, the driver's own
+  language for drivers. Render them in a local notification when the
+  app is not foregrounded.
+- `payload` is a **JSON string** — parse it, then route by `type` using
+  the tables below. Handle unknown types gracefully (open the
+  notification list).
+- Time-sensitive driver types (`offer_received`,
+  `offer_no_longer_available`, `trip_assigned`, `trip_reminder`,
+  `trip_updated`, `passenger_cancelled`) ship with
+  `android.priority: high`; everything else at normal priority. All
+  carry APNs `content-available: 1` background headers.
+- Topic broadcasts from the portal arrive the same way with
+  `type: "system_announcement"`.
 
 ## 3. In-app notification lists
 
