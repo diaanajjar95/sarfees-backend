@@ -19,7 +19,7 @@ of acceptance (`currentTrip.status: "accepted"`).
 
 ## 1. `offered` — the offer sheet
 
-Push `new_trip_offer` arrives; render from `GET /drivers/trips/{id}/offer`.
+Push `offer_received` arrives (cascade AND manual assign — same type, same payload contract); render from `GET /drivers/trips/{id}/offer`.
 The offer expires after the countdown (default 45 s) — no response counts
 as a decline with penalty.
 

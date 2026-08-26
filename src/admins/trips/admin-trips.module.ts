@@ -7,12 +7,14 @@ import { DriverTripDeclineLog } from '../../driver-trips/entities/driver-trip-de
 import { AdminTripsService } from './admin-trips.service';
 import { AdminTripsController } from './admin-trips.controller';
 import { DriverTripsModule } from '../../driver-trips/driver-trips.module';
+import { DriverNotificationsModule } from '../../notifications/driver-notifications.module';
 
 @Module({
   imports: [
     PassportModule,
     TypeOrmModule.forFeature([DriverTrip, DriverTripStop, DriverTripDeclineLog]),
     DriverTripsModule,
+    DriverNotificationsModule,
   ],
   controllers: [AdminTripsController],
   providers: [AdminTripsService],

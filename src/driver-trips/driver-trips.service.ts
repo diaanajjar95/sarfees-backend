@@ -1751,16 +1751,12 @@ export class DriverTripsService {
       }
 
       return savedTrip;
-    }).then(async (savedTrip) => {
-      await this.notifications.emit({
-        driverId: dto.driverId,
-        type: DriverNotificationType.TRIP_ASSIGNED,
-        title: 'New trip offer',
-        body: `${dto.originCity} → ${dto.destinationCity}`,
-        payload: { tripId: savedTrip.id },
-      });
-      return savedTrip;
     });
+    // NOTE: no notification here — seeding and notifying are separate.
+    // The cascade (assignment.service) and the manual-assign endpoint
+    // each emit their own OFFER_RECEIVED with the right payload;
+    // emitting TRIP_ASSIGNED from here mislabeled offers (that type
+    // means "accept confirmed") and double-notified cascade offers.
   }
 
   // ═════════════════════════════════════════════════════════════
