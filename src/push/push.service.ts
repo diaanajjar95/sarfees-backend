@@ -90,12 +90,31 @@ export class PushService implements OnApplicationBootstrap {
     ownerId: number,
     token: string,
     platform?: string,
+    deviceId?: string,
   ): Promise<{ registered: boolean; pushEnabled: boolean }> {
+    // FCM tokens rotate (reinstall, data clear, dev rebuild) while the
+    // old one can stay deliverable for a while — without cleanup the
+    // same phone ends up with two live tokens and every push arrives
+    // twice. When the app supplies a stable deviceId we delete any
+    // OTHER token rows for that device (any owner — the device may
+    // have switched accounts) before upserting this one.
+    if (deviceId) {
+      await this.tokensRepo
+        .createQueryBuilder()
+        .delete()
+        .where('"deviceId" = :deviceId AND token != :token', {
+          deviceId,
+          token,
+        })
+        .execute();
+    }
+
     const existing = await this.tokensRepo.findOne({ where: { token } });
     if (existing) {
       existing.ownerType = ownerType;
       existing.ownerId = ownerId;
       existing.platform = platform ?? existing.platform;
+      existing.deviceId = deviceId ?? existing.deviceId;
       await this.tokensRepo.save(existing);
     } else {
       await this.tokensRepo.save(
@@ -104,6 +123,7 @@ export class PushService implements OnApplicationBootstrap {
           ownerId,
           token,
           platform: platform ?? null,
+          deviceId: deviceId ?? null,
         }),
       );
     }

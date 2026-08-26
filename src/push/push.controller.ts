@@ -26,6 +26,17 @@ class RegisterDeviceTokenDto {
   @IsOptional()
   @IsIn(['android', 'ios'])
   platform?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Stable per-install device id (ANDROID_ID / identifierForVendor). ' +
+      'STRONGLY recommended — with it, a rotated FCM token replaces the ' +
+      'old row instead of coexisting with it (fixes duplicate pushes).',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  deviceId?: string;
 }
 
 class RemoveDeviceTokenDto {
@@ -57,6 +68,7 @@ export class PushController {
       userId,
       dto.token,
       dto.platform,
+      dto.deviceId,
     );
   }
 
@@ -80,6 +92,7 @@ export class PushController {
       driverId,
       dto.token,
       dto.platform,
+      dto.deviceId,
     );
   }
 

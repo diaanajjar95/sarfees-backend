@@ -33,6 +33,15 @@ export class DeviceToken {
   @Column({ type: 'varchar', length: 512 })
   token: string;
 
+  /**
+   * Stable per-install device identifier supplied by the app
+   * (ANDROID_ID / identifierForVendor). When present, registration
+   * replaces any other token for the same device — this is what stops
+   * duplicate pushes after FCM token rotation.
+   */
+  @Column({ type: 'varchar', length: 128, nullable: true })
+  deviceId: string | null;
+
   @Column({ type: 'varchar', length: 16, nullable: true })
   platform: string | null;
 
