@@ -20,6 +20,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AdminTripsService } from './admin-trips.service';
+import { DriverNotificationsService } from '../../notifications/driver-notifications.service';
+import { DriverNotificationType } from '../../shared/enums/driver-notification-type.enum';
 import {
   ListAdminTripsQueryDto,
   ListAdminTripsResponseDto,
@@ -42,6 +44,7 @@ export class AdminTripsController {
   constructor(
     private readonly service: AdminTripsService,
     private readonly driverTripsService: DriverTripsService,
+    private readonly driverNotifications: DriverNotificationsService,
   ) {}
 
   @ApiOperation({ summary: 'List trips (filterable, paginated)' })
@@ -82,6 +85,20 @@ export class AdminTripsController {
     offerExpiresAt: Date;
   }> {
     const trip: DriverTrip = await this.driverTripsService.seedTrip(dto);
+    // Same type + payload contract as the cascade offer — the app's
+    // offer screen (30 s countdown) handles both identically.
+    await this.driverNotifications.emit({
+      driverId: dto.driverId,
+      type: DriverNotificationType.OFFER_RECEIVED,
+      title: 'New trip offer',
+      body: `${dto.originCity} → ${dto.destinationCity}`,
+      payload: {
+        driverTripId: trip.id,
+        womenOnly: dto.type === 'women_only',
+        broadcast: false,
+        manual: true,
+      },
+    });
     return {
       tripId: trip.id,
       driverId: dto.driverId,
